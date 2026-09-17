@@ -16,7 +16,8 @@ webrtc: no
 srt: no
 
 authMethod: http
-authHTTPAddress: http://127.0.0.1:4000/api/mediamtx/auth
+# Overridden in Compose by MTX_AUTHHTTPADDRESS=http://web:4000/api/mediamtx/auth
+authHTTPAddress: http://web:4000/api/mediamtx/auth
 authHTTPExclude:
   - action: api
   - action: metrics

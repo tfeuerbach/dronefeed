@@ -8,7 +8,15 @@ import Config
 config :drone_feed, DroneFeedWeb.Endpoint,
   cache_static_manifest: "priv/static/cache_manifest.json",
   # TLS terminates at Caddy; trust X-Forwarded-Proto and redirect plain HTTP.
-  force_ssl: [rewrite_on: [:x_forwarded_proto], hsts: true]
+  # Keep MediaMTX → web auth on plain HTTP inside the compose network (no HTTPS hop).
+  force_ssl: [
+    rewrite_on: [:x_forwarded_proto],
+    hsts: true,
+    exclude: [
+      hosts: ["localhost", "127.0.0.1", "web"],
+      paths: ["/api/mediamtx/auth"]
+    ]
+  ]
 
 # Do not print debug messages in production
 config :logger, level: :info
