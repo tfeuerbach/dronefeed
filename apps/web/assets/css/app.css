@@ -329,7 +329,7 @@ body {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  max-height: min(72vh, 52rem);
+  max-height: min(70vh, 44rem);
   margin-inline: auto;
   background: oklch(10% 0.02 220);
   object-fit: contain;
@@ -376,15 +376,15 @@ body {
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  flex: 1.4 1 auto;
-  min-height: 22rem;
+  flex: 1 1 auto;
+  min-height: 16rem;
 }
 
 .df-flight-map {
   width: 100%;
   flex: 1 1 auto;
-  min-height: 20rem;
-  height: 24rem;
+  min-height: 14rem;
+  height: 18rem;
   background: color-mix(in oklch, var(--color-base-200) 80%, transparent);
 }
 
@@ -436,7 +436,7 @@ body {
 
 @media (min-width: 1024px) {
   .df-flight-deck {
-    grid-template-columns: minmax(0, 1fr) clamp(20rem, 28vw, 26rem);
+    grid-template-columns: minmax(0, 1fr) clamp(17.5rem, 24vw, 22rem);
     grid-template-areas:
       "stage side"
       "raw raw"
@@ -445,21 +445,51 @@ body {
     align-items: stretch;
   }
 
+  /* Video height anchors the row; side fills that height. */
+  .df-flight-stage {
+    min-height: 0;
+  }
+
+  .df-flight-video {
+    max-height: min(68vh, 40rem);
+  }
+
   .df-flight-side {
-    max-height: min(78vh, 56rem);
+    /* Match video row height without expanding it (content fills via flex). */
+    height: 0;
+    min-height: 100%;
+    max-height: none;
+    overflow: hidden;
   }
 
-  .df-flight-map-panel {
-    min-height: 26rem;
-  }
-
-  .df-flight-map {
-    height: auto;
-    min-height: 22rem;
+  .df-flight-readouts {
+    flex: 0 0 auto;
+    padding: 0.75rem 0.85rem;
   }
 
   .df-gauge-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.65rem;
+  }
+
+  .df-gauge {
+    padding: 0.5rem 0.45rem;
+  }
+
+  .df-gauge-value {
+    font-size: clamp(0.65rem, 0.85vw, 0.78rem);
+  }
+
+  .df-flight-map-panel {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .df-flight-map {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
   }
 }
 

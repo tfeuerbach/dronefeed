@@ -66,6 +66,7 @@ export const FlightDeck = {
     this.map = null
     this.marker = null
     this.trail = null
+    this.resizeObserver = null
     this.video = this.el.querySelector("video")
     this.onTime = () => this.syncFromVideo()
 
@@ -84,12 +85,19 @@ export const FlightDeck = {
 
   updated() {
     this.points = parsePoints(this.el)
+    if (this.map) {
+      requestAnimationFrame(() => this.map.invalidateSize())
+    }
   },
 
   destroyed() {
     if (this.video) {
       this.video.removeEventListener("timeupdate", this.onTime)
       this.video.removeEventListener("seeked", this.onTime)
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect()
+      this.resizeObserver = null
     }
     if (this.map) {
       this.map.remove()
@@ -129,8 +137,12 @@ export const FlightDeck = {
 
     this.map.fitBounds(this.trail.getBounds(), { padding: [24, 24] })
 
-    // Leaflet needs a size recalc after LiveView layout
+    // Leaflet needs a size recalc after flex/grid layout settles
     requestAnimationFrame(() => this.map.invalidateSize())
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.map) this.map.invalidateSize({ animate: false })
+    })
+    this.resizeObserver.observe(root)
   },
 
   syncFromVideo() {

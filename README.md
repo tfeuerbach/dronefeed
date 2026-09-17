@@ -7,14 +7,15 @@
 <p align="center"><strong>Research flight feeds</strong></p>
 
 <p align="center">
-  Upload FMV + SRT/KLV, publish pullable RTMP/RTSP, and share live companion ingest with your team.
+  Upload FMV + SRT/KLV, publish pullable RTMP/RTSP, and share live companion or drone UDP ingest with your team.
 </p>
 
 ## Stack
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
-- **MediaMTX** — RTMP `:1935` / RTSP `:8554` ingest + pull; MPEG-TS over UDP `:8900–8999` for drone feeds
-- **FFmpeg** — loops recorded flights into MediaMTX when Publish is toggled on
+- **MediaMTX** — RTMP `:1935` / RTSP `:8554` pull (+ companion push); MPEG-TS over UDP `:8900–8999` for drone ingest and recorded republish
+- **FFmpeg** — loops recorded STANAG TS into MediaMTX (MPEG-TS/UDP + RTMP A/V) when Public feed is on
+- **Caddy** — HTTPS (Let's Encrypt) in front of Phoenix
 - **Postgres** — users, flights, live sessions
 
 ## Architecture
@@ -23,56 +24,62 @@
 flowchart TB
   subgraph clients["Clients"]
     UP["Upload / browser UI"]
-    LIVE["Live companion app"]
+    COMP["Companion app"]
+    DRONE["Drone / encoder"]
     PULL["Research tools"]
   end
 
   subgraph phoenix["Phoenix"]
-    WEB["Auth · flights UI · MediaMTX webhook · FFmpeg supervision"]
+    WEB["Auth · UI · MediaMTX auth · publishers"]
   end
 
   subgraph recorded["Recorded flights"]
-    DJI["Consumer DJI — MP4 + .SRT"]
+    DJI["Consumer — MP4 + .SRT"]
     ENT["Enterprise — TS + KLV"]
-    MUX["mux_to_stanag.py<br/>SRT → MISB KLV or remux"]
+    MUX["mux_to_stanag.py"]
     TS["publish_stanag.ts"]
     DJI --> MUX
     ENT --> MUX
     MUX --> TS
   end
 
-  subgraph egress["Publish egress"]
-    FF["FFmpeg loop publishers"]
-    RTSP["RTSP :8554 — FMV + in-band KLV"]
-    RTMP["RTMP :1935 — video/audio only"]
-    MTX["MediaMTX — stream-key auth"]
-    FF --> RTSP --> MTX
-    FF --> RTMP --> MTX
+  subgraph mtx["MediaMTX"]
+    UDP_IN["UDP MPEG-TS :8900–8999"]
+    RTMP_P["RTMP :1935"]
+    RTSP_P["RTSP :8554"]
   end
 
   UP --> WEB
-  LIVE -->|live ingest path| MTX
   WEB --> DJI
   WEB --> ENT
-  TS --> FF
-  PULL -->|pull vod / live| MTX
+  TS -->|FFmpeg MPEG-TS/UDP + RTMP A/V| mtx
+  COMP -->|RTMP / RTSP push| mtx
+  DRONE -->|MPEG-TS UDP| UDP_IN
+  PULL -->|pull RTSP / RTMP<br/>vod or live + stream key| RTSP_P
+  PULL --> RTMP_P
+  WEB -.->|HTTP auth webhook| mtx
 ```
 
-**Recorded publish (Public feed on)**
+**Recorded — Public feed on**
 
 1. Flight assets land in storage (video + optional `.srt` / `.klv`).
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
-   - **Consumer:** parse DJI `.srt` → encode MISB ST 0601 KLV → mux with video
+   - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
    - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
-3. FFmpeg loops that TS into MediaMTX; Phoenix authorizes publish/read via stream key.
-4. Research tools pull **RTSP** for video + telemetry in one stream. **RTMP** is A/V only (FLV cannot carry KLV).
-5. Original `.srt` / `.klv` sidecars remain available over HTTP metadata URLs when publishing.
+3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. A second FFmpeg process pushes **RTMP A/V only** (FLV cannot carry KLV).
+4. Research tools **pull RTSP / RTMP** from MediaMTX with user `drone` and the flight stream key. (FFmpeg does not publish RTSP directly — the RTSP muxer cannot carry `bin_data` / KLV.)
+5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 
-**Browser UI** parses `.srt` (or extracted KLV) for the map and live readouts — that path is separate from the STANAG mux used for egress.
+**Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — separate from the STANAG mux used for egress.
 
-**Live ingest** can be companion **RTMP/RTSP push**, or **MPEG-TS over UDP** (drone/encoder → allocated port). Pull always uses the same RTMP/RTSP URLs with stream-key auth.
+**Live ingest**
 
-Recorded **Public feed** republishes via MPEG-TS/UDP into MediaMTX (keeps in-band KLV); RTMP is A/V-only. Research tools pull RTSP/RTMP as before.
+| Mode | How it enters MediaMTX | How tools pull |
+|------|------------------------|----------------|
+| **Companion push** | App publishes RTMP or RTSP to `/live/<id>` with stream key | Same RTMP/RTSP URLs + stream key |
+| **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` (port from `8900–8999`) | Same RTMP/RTSP pull URLs + stream key |
+
+UDP ingest has no stream key on the wire — treat the allocated port as sensitive and tighten the security group when you can.
 
 ## Quick start (dev)
 
@@ -108,7 +115,7 @@ Run MediaMTX locally (auth → Phoenix):
 docker run --rm --network host \
   -e MTX_AUTHHTTPADDRESS=http://127.0.0.1:4000/api/mediamtx/auth \
   -v "$PWD/deploy/mediamtx.yml:/mediamtx.yml" \
-  bluenviron/mediamtx:1.11.3
+  bluenviron/mediamtx:1.15.6
 ```
 
 ## Production
@@ -119,7 +126,8 @@ See [deploy/README.md](deploy/README.md) for ports, EC2 sizing, DNS, and Let's E
 cd deploy
 cp .env.example .env
 # set SECRET_KEY_BASE, PHX_HOST, ACME_EMAIL, POSTGRES_PASSWORD,
-# ADMIN_EMAIL, ADMIN_PASSWORD (≥8 chars), ADMIN_CONTACT, MEDIA_HOST
+# ADMIN_EMAIL, ADMIN_PASSWORD (≥8 chars), ADMIN_CONTACT, MEDIA_HOST,
+# MEDIA_IP, UDP_INGEST_PORT_MIN/MAX (defaults 8900–8999)
 docker compose --env-file .env up -d --build
 ```
 
@@ -143,6 +151,6 @@ Copyright (C) 2026 Tim Feuerbach and contributors.
 
 **[GNU Affero General Public License v3.0](LICENSE)** (`AGPL-3.0-only`).
 
-You may use, study, and modify DroneFeed freely. Copyright and license notices must be kept (attribution). If you distribute a modified version, or run a modified version as a network service, you must offer the corresponding source under AGPL-3.0 as well.
+Free to use, study, and modify. Keep copyright and license notices. Distributed or network-hosted modifications must offer corresponding source under AGPL-3.0.
 
-There is no separate “AGPL v2”; AGPL-3.0 is the current Affero GPL. AGPL does **not** ban commercial use or paid hosting—those limits would make the project source-available rather than open source. If you need a no-resale / no-subscription clause on top, say so and we can discuss a dual license or a non-OSI addendum.
+Separate tools that only talk to a self-hosted DroneFeed over APIs/streams (and work without it) are not required to be AGPL solely because of that integration. Offering a modified DroneFeed itself as a network service is allowed under AGPL but requires providing that modified source to users of the service.

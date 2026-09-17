@@ -76,7 +76,8 @@ services:
     restart: unless-stopped
 
   mediamtx:
-    image: bluenviron/mediamtx:1.11.3
+    # 1.14+ required for udp+mpegts:// path sources (MPEG-TS / KLV ingest)
+    image: bluenviron/mediamtx:1.15.6
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     environment:

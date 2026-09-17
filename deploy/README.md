@@ -12,7 +12,10 @@
 | 8888 | TCP | MediaMTX HLS (optional) | Browser / ops |
 | 22 | TCP | SSH (or use SSM only) | Ops |
 
-RTMP/RTSP share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** live sessions each get one port from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999).
+RTMP/RTSP share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999) are used for:
+
+- Live **Drone UDP** ingest sessions (one port each)
+- Recorded **Public feed** republish (FFmpeg → MediaMTX over UDP, full TS + KLV)
 
 Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates TLS and reverse-proxies.
 
@@ -57,10 +60,12 @@ docker compose --env-file .env up -d --build
 
 ## Stream URL pattern
 
-- Default (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>` / `rtsp://MEDIA_IP:8554/vod/<flight_id>`
+- Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>` / `rtsp://MEDIA_IP:8554/vod/<flight_id>`
 - Alternate (DNS): same paths on `MEDIA_HOST` when it differs from `MEDIA_IP`
 - Auth: user `drone` / password = stream key
-- Live ingest/pull: `/live/<session_id>` on the same hosts/ports
+- Live pull: `/live/<session_id>` on the same RTMP/RTSP hosts/ports
+- Live **Drone UDP** ingest: `udp://MEDIA_IP:<allocated-port>` (MPEG-TS; port shown in the UI)
+- Companion live ingest: RTMP/RTSP publish URLs with stream key (shown in the UI)
 
 ## Systemd (non-Compose)
 
@@ -71,4 +76,4 @@ For TLS on bare metal, run Caddy (or nginx) on the host pointing at Phoenix `:40
 
 1. Start Postgres (compose `db` only, or local on 5434)
 2. `cd apps/web && mix setup && mix phx.server`
-3. Run MediaMTX: `docker run --rm -p 1935:1935 -p 8554:8554 -v $PWD/deploy/mediamtx.yml:/mediamtx.yml bluenviron/mediamtx:1.11.3` with `MTX_AUTHHTTPADDRESS=http://host.docker.internal:4000/api/mediamtx/auth` (Linux: use host gateway IP)
+3. Run MediaMTX: `docker run --rm -p 1935:1935 -p 8554:8554 -v $PWD/deploy/mediamtx.yml:/mediamtx.yml bluenviron/mediamtx:1.15.6` with `MTX_AUTHHTTPADDRESS=http://host.docker.internal:4000/api/mediamtx/auth` (Linux: use host gateway IP)
