@@ -117,10 +117,22 @@ defmodule DroneFeed.Streaming do
       ingest_mode: session.ingest_mode,
       rtmp_pull: MediaURLs.rtmp_url(:live, session.id, host: ip),
       rtsp_pull: MediaURLs.rtsp_url(:live, session.id, host: ip),
-      srt_pull: MediaURLs.srt_mpegts_url(:live, session.id, host: ip),
+      srt_pull:
+        MediaURLs.srt_mpegts_url(:live, session.id,
+          host: ip,
+          include_key: true,
+          stream_key: session.stream_key
+        ),
       rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:live, session.id, host: &1)),
       rtsp_pull_alt: alt_url(domain, &MediaURLs.rtsp_url(:live, session.id, host: &1)),
-      srt_pull_alt: alt_url(domain, &MediaURLs.srt_mpegts_url(:live, session.id, host: &1)),
+      srt_pull_alt:
+        alt_url(domain, fn h ->
+          MediaURLs.srt_mpegts_url(:live, session.id,
+            host: h,
+            include_key: true,
+            stream_key: session.stream_key
+          )
+        end),
       stream_key: session.stream_key
     }
 
@@ -162,12 +174,36 @@ defmodule DroneFeed.Streaming do
     %{
       media_ip: ip,
       media_domain: domain,
-      primary_pull: MediaURLs.srt_mpegts_url(:vod, flight.id, host: ip),
-      primary_pull_alt: alt_url(domain, &MediaURLs.srt_mpegts_url(:vod, flight.id, host: &1)),
+      primary_pull:
+        MediaURLs.srt_mpegts_url(:vod, flight.id,
+          host: ip,
+          include_key: true,
+          stream_key: flight.stream_key
+        ),
+      primary_pull_alt:
+        alt_url(domain, fn h ->
+          MediaURLs.srt_mpegts_url(:vod, flight.id,
+            host: h,
+            include_key: true,
+            stream_key: flight.stream_key
+          )
+        end),
       primary_protocol: "srt",
       primary_note: "MPEG-TS over SRT (H.264 + MISB KLV)",
-      srt_pull: MediaURLs.srt_mpegts_url(:vod, flight.id, host: ip),
-      srt_pull_alt: alt_url(domain, &MediaURLs.srt_mpegts_url(:vod, flight.id, host: &1)),
+      srt_pull:
+        MediaURLs.srt_mpegts_url(:vod, flight.id,
+          host: ip,
+          include_key: true,
+          stream_key: flight.stream_key
+        ),
+      srt_pull_alt:
+        alt_url(domain, fn h ->
+          MediaURLs.srt_mpegts_url(:vod, flight.id,
+            host: h,
+            include_key: true,
+            stream_key: flight.stream_key
+          )
+        end),
       rtmp_pull: MediaURLs.rtmp_url(:vod, flight.id, host: ip),
       rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:vod, flight.id, host: &1)),
       rtmp_note: "video/audio only (FLV cannot carry KLV)",

@@ -3,21 +3,30 @@
 logLevel: info
 logDestinations: [stdout]
 
-api: yes
+# Slow/remote 4K readers + loop seek gaps must not trip these.
+readTimeout: 60s
+writeTimeout: 60s
+
+# High-bitrate MPEG-TS ingest (4K ~100Mbps) needs a large UDP read buffer.
+# Host net.core.rmem_max must be >= this (see deploy/README).
+udpReadBufferSize: 16777216
+
+api: true
 apiAddress: :9997
 
-rtsp: yes
+rtsp: true
 rtspAddress: :8554
-rtmp: yes
+rtmp: true
 rtmpAddress: :1935
-hls: yes
+hls: true
 hlsAddress: :8888
-webrtc: no
-srt: yes
+webrtc: false
+srt: true
 srtAddress: :8890
 
-# 4K FMV needs a larger write queue; default drops frames under slow readers.
-writeQueueSize: 1024
+# Power-of-two outgoing packet queue. Default 512 ≈ 5Mbps; 4K FMV (~100Mbps)
+# with multiple SRT readers needs far more or readers get starved and see EOF.
+writeQueueSize: 65536
 
 authMethod: http
 # Overridden in Compose by MTX_AUTHHTTPADDRESS=http://web:4000/api/mediamtx/auth
@@ -29,6 +38,10 @@ authHTTPExclude:
 
 pathDefaults:
   source: publisher
+  # Unlimited concurrent SRT/RTSP/RTMP readers.
+  maxReaders: 0
+  # Keep relative PTS from the publisher (FFmpeg genpts keeps loops monotonic).
+  useAbsoluteTimestamp: false
 
 paths:
   "~^vod/.+$":

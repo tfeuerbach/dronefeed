@@ -56,7 +56,7 @@ defmodule DroneFeed.MediaURLs do
   @doc """
   SRT pull URL for MPEG-TS (H.264 + KLV). Auth via MediaMTX streamid.
 
-  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>`
+  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=4000000`
   """
   def srt_mpegts_url(kind, id, opts \\ []) do
     host = Keyword.get(opts, :host, media_ip())
@@ -72,7 +72,8 @@ defmodule DroneFeed.MediaURLs do
         "read:#{path}"
       end
 
-    "srt://#{host}:#{port}?streamid=#{streamid}"
+    # 4s latency + large SRT buffers: 4K ~100Mbps needs >> default 8192-pkt recv queue.
+    "srt://#{host}:#{port}?streamid=#{streamid}&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000"
   end
 
   def publish_target(:rtmp, kind, id, stream_key) do
@@ -89,6 +90,17 @@ defmodule DroneFeed.MediaURLs do
   def publish_target(kind, id, stream_key), do: publish_target(:rtmp, kind, id, stream_key)
 
   @doc """
+  Internal SRT publish target (MPEG-TS with KLV) from the web container into MediaMTX.
+  """
+  def publish_srt_mpegts_url(kind, id, stream_key) when kind in [:vod, :live] do
+    host = Application.get_env(:drone_feed, :mediamtx_host, "mediamtx")
+    port = Application.get_env(:drone_feed, :srt_port, 8890)
+    path = stream_path(kind, id)
+    streamid = "publish:#{path}:drone:#{stream_key}"
+    "srt://#{host}:#{port}?streamid=#{streamid}&pkt_size=1316"
+  end
+
+  @doc """
   Destination for drones / encoders sending MPEG-TS over UDP (unicast).
   """
   def udp_mpegts_url(port, opts \\ []) when is_integer(port) do
@@ -98,6 +110,7 @@ defmodule DroneFeed.MediaURLs do
 
   @doc """
   Internal publish target from the web container into MediaMTX (MPEG-TS / UDP).
+  Used for live drone UDP ingest paths only.
   """
   def publish_udp_mpegts_url(port) when is_integer(port) do
     host = Application.get_env(:drone_feed, :mediamtx_host, "mediamtx")
@@ -112,8 +125,16 @@ defmodule DroneFeed.MediaURLs do
     host = Keyword.get(opts, :host, web_host())
     port = Keyword.get(opts, :port, web_port())
     scheme = Keyword.get(opts, :scheme, web_scheme())
+    path = "/api/streams/vod/#{flight_id}/metadata/#{kind}?key=#{URI.encode_www_form(stream_key)}"
 
-    "#{scheme}://#{host}:#{port}/api/streams/vod/#{flight_id}/metadata/#{kind}?key=#{URI.encode_www_form(stream_key)}"
+    authority =
+      cond do
+        scheme == "https" and port in [443, "443"] -> host
+        scheme == "http" and port in [80, "80"] -> host
+        true -> "#{host}:#{port}"
+      end
+
+    "#{scheme}://#{authority}#{path}"
   end
 
   defp rtmp_port, do: Application.fetch_env!(:drone_feed, :rtmp_port)

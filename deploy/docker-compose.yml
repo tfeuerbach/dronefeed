@@ -77,8 +77,8 @@ services:
     restart: unless-stopped
 
   mediamtx:
-    # 1.14+ required for udp+mpegts:// path sources (MPEG-TS / KLV ingest)
-    image: bluenviron/mediamtx:1.15.6
+    # 1.14+ for udp+mpegts; 1.19+ includes SRT high-latency handshake fixes
+    image: bluenviron/mediamtx:1.19.3
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
     environment:

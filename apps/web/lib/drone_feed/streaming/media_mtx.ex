@@ -43,6 +43,18 @@ defmodule DroneFeed.Streaming.MediaMTX do
     end
   end
 
+  @doc "Cheap health check against the MediaMTX API."
+  def ping do
+    if enabled?() do
+      case request(:get, "/v3/config/global/get", "") do
+        :ok -> :ok
+        {:error, _} = err -> err
+      end
+    else
+      :ok
+    end
+  end
+
   defp enabled? do
     Application.get_env(:drone_feed, :mediamtx_api_enabled, true)
   end
@@ -63,6 +75,12 @@ defmodule DroneFeed.Streaming.MediaMTX do
         :post ->
           Req.post(url,
             body: body,
+            headers: headers,
+            receive_timeout: 5_000
+          )
+
+        :get ->
+          Req.get(url,
             headers: headers,
             receive_timeout: 5_000
           )

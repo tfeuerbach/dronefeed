@@ -4,10 +4,10 @@ defmodule DroneFeed.Streaming.Publisher do
 
   Both consumer DJI (MP4 + SRT) and enterprise TS+KLV are normalized via
   `StanagMux` into `publish_stanag.ts`, then FFmpeg loops the full TS
-  (including MISB KLV) into a MediaMTX `udp+mpegts` listener on `vod/<id>`.
+  (including MISB KLV) into MediaMTX over **SRT** (`publish:vod/<id>`).
 
-  MediaMTX re-serves that path as RTSP/RTMP for pull clients. A second FFmpeg
-  RTMP publish to the same path is not used — the path can only have one source.
+  MediaMTX re-serves that path as SRT/RTSP/RTMP for pull clients. SRT is used
+  for ingest (not UDP) so loop seeks and high bitrate do not gap the source.
   """
 
   use GenServer
@@ -18,7 +18,6 @@ defmodule DroneFeed.Streaming.Publisher do
   alias DroneFeed.Streaming.FlightLog
   alias DroneFeed.Streaming.MediaMTX
   alias DroneFeed.Streaming.StanagMux
-  alias DroneFeed.Streaming.UdpPorts
 
   def start_link(%Flight{} = flight) do
     GenServer.start_link(__MODULE__, flight, name: via(flight.id))
@@ -43,42 +42,34 @@ defmodule DroneFeed.Streaming.Publisher do
 
       case StanagMux.ensure_publish_ts(flight) do
         {:ok, ts_path} ->
-          case UdpPorts.allocate() do
-            {:ok, udp_port} ->
-              path = MediaURLs.stream_path(:vod, flight.id)
+          path = MediaURLs.stream_path(:vod, flight.id)
+          # Clear any prior udp+mpegts dynamic source so the path accepts SRT publish.
+          wait_for_mediamtx()
+          _ = MediaMTX.delete_path(path)
+          # Brief pause so delete settles before FFmpeg publishes.
+          Process.sleep(300)
 
-              case MediaMTX.add_udp_mpegts_path(path, udp_port) do
-                :ok ->
-                  FlightLog.info(flight.id, :mux, "Publish TS ready", %{
-                    path: Path.basename(ts_path)
-                  })
+          FlightLog.info(flight.id, :mux, "Publish TS ready", %{
+            path: Path.basename(ts_path)
+          })
 
-                  FlightLog.info(flight.id, :publisher, "MediaMTX UDP MPEG-TS listener :#{udp_port}")
+          FlightLog.info(flight.id, :publisher, "MediaMTX SRT MPEG-TS publish → #{path}")
 
-                  {ports, labels} = start_ffmpeg_processes(flight, ts_path, udp_port)
+          {ports, labels} = start_ffmpeg_processes(flight, ts_path)
 
-                  FlightLog.info(flight.id, :publisher, "FFmpeg publishers up", %{
-                    processes: map_size(labels)
-                  })
+          FlightLog.info(flight.id, :publisher, "FFmpeg publishers up", %{
+            processes: map_size(labels)
+          })
 
-                  {:ok,
-                   %{
-                     flight_id: flight.id,
-                     ports: ports,
-                     port_labels: labels,
-                     flight: flight,
-                     ts_path: ts_path,
-                     udp_port: udp_port
-                   }}
-
-                {:error, reason} ->
-                  UdpPorts.release(udp_port)
-                  fail_init(flight.id, reason)
-              end
-
-            {:error, reason} ->
-              fail_init(flight.id, reason)
-          end
+          {:ok,
+           %{
+             flight_id: flight.id,
+             ports: ports,
+             port_labels: labels,
+             flight: flight,
+             ts_path: ts_path,
+             udp_port: nil
+           }}
 
         {:error, reason} ->
           fail_init(flight.id, reason)
@@ -110,15 +101,12 @@ defmodule DroneFeed.Streaming.Publisher do
   def terminate(reason, state) do
     flight_id = Map.get(state, :flight_id)
     ports = Map.get(state, :ports, [])
-    udp_port = Map.get(state, :udp_port)
 
     if flight_id do
       FlightLog.info(flight_id, :publisher, "Public feed stopping", %{reason: inspect(reason)})
-      _ = MediaMTX.delete_path(MediaURLs.stream_path(:vod, flight_id))
     end
 
     Enum.each(ports, &safe_close/1)
-    UdpPorts.release(udp_port)
     :ok
   end
   @impl true
@@ -157,7 +145,7 @@ defmodule DroneFeed.Streaming.Publisher do
       )
 
       safe_close(port)
-      Process.send_after(self(), {:restart_publisher, label}, 1_000)
+      Process.send_after(self(), {:restart_publisher, label}, 500)
 
       {:noreply,
        %{
@@ -177,7 +165,7 @@ defmodule DroneFeed.Streaming.Publisher do
       FlightLog.warn(state.flight_id, :ffmpeg, "Port EXIT #{inspect(reason)}; restarting")
       Logger.warning("ffmpeg port EXIT #{inspect(reason)}; restarting")
       safe_close(port)
-      Process.send_after(self(), {:restart_publisher, label}, 1_000)
+      Process.send_after(self(), {:restart_publisher, label}, 500)
 
       {:noreply,
        %{
@@ -194,7 +182,7 @@ defmodule DroneFeed.Streaming.Publisher do
     if Map.values(state.port_labels) |> Enum.member?(label) do
       {:noreply, state}
     else
-      case open_one(state.flight, state.ts_path, state.udp_port, label) do
+      case open_one(state.flight, state.ts_path, label) do
         nil ->
           Process.send_after(self(), {:restart_publisher, label}, 2_000)
           {:noreply, state}
@@ -212,40 +200,63 @@ defmodule DroneFeed.Streaming.Publisher do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp start_ffmpeg_processes(%Flight{} = flight, ts_path, udp_port)
-       when is_binary(ts_path) and is_integer(udp_port) do
-    case open_one(flight, ts_path, udp_port, "ffmpeg-mpegts") do
+  defp start_ffmpeg_processes(%Flight{} = flight, ts_path) when is_binary(ts_path) do
+    case open_one(flight, ts_path, "ffmpeg-mpegts") do
       nil -> {[], %{}}
       port -> {[port], %{port => "ffmpeg-mpegts"}}
     end
   end
 
-  defp open_one(flight, ts_path, udp_port, "ffmpeg-mpegts") do
-    open_ffmpeg(flight.id, mpegts_udp_args(ts_path, udp_port), "ffmpeg-mpegts")
+  defp open_one(flight, ts_path, "ffmpeg-mpegts") do
+    open_ffmpeg(flight.id, mpegts_srt_args(flight, ts_path), "ffmpeg-mpegts")
   end
 
-  defp open_one(_flight, _ts_path, _udp_port, _label), do: nil
+  defp open_one(_flight, _ts_path, _label), do: nil
 
-  defp mpegts_udp_args(ts_path, udp_port) do
-    target = MediaURLs.publish_udp_mpegts_url(udp_port)
+  defp mpegts_srt_args(%Flight{} = flight, ts_path) do
+    target = MediaURLs.publish_srt_mpegts_url(:vod, flight.id, flight.stream_key)
 
     [
       "-hide_banner",
       "-loglevel",
       "warning",
+      # Real-time pacing for live pull clients.
       "-re",
       "-stream_loop",
       "-1",
+      # Continuous PTS across loops (FFmpeg offsets on each iteration).
+      "-fflags",
+      "+genpts+igndts",
+      "-avoid_negative_ts",
+      "make_zero",
       "-i",
       ts_path,
       "-map",
       "0",
       "-c",
       "copy",
+      "-muxdelay",
+      "0",
+      "-muxpreload",
+      "0",
+      "-flush_packets",
+      "1",
       "-f",
       "mpegts",
-      target
+      # Live SRT: latency + large buffers for ~100Mbps 4K.
+      target <> "&latency=4000000&transtype=live&sndbuf=120000000&rcvbuf=120000000"
     ]
+  end
+
+  defp wait_for_mediamtx do
+    Enum.reduce_while(1..20, :ok, fn _, _ ->
+      case MediaMTX.ping() do
+        :ok -> {:halt, :ok}
+        _ ->
+          Process.sleep(250)
+          {:cont, :ok}
+      end
+    end)
   end
 
   defp open_ffmpeg(flight_id, args, label) do
