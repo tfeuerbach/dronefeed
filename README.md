@@ -66,7 +66,7 @@ flowchart TB
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
    - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
    - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
-3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. A second FFmpeg process pushes **RTMP A/V only** (FLV cannot carry KLV).
+3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. MediaMTX re-serves the same path for **RTSP / RTMP** pull (no second FFmpeg publish — a path can only have one source).
 4. Research tools **pull RTSP / RTMP** from MediaMTX with user `drone` and the flight stream key. (FFmpeg does not publish RTSP directly — the RTSP muxer cannot carry `bin_data` / KLV.)
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 

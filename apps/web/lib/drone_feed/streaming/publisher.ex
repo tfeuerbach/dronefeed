@@ -3,11 +3,11 @@ defmodule DroneFeed.Streaming.Publisher do
   Republishes a recorded flight as a unified STANAG-style MPEG-TS feed.
 
   Both consumer DJI (MP4 + SRT) and enterprise TS+KLV are normalized via
-  `StanagMux` into `publish_stanag.ts`, then:
+  `StanagMux` into `publish_stanag.ts`, then FFmpeg loops the full TS
+  (including MISB KLV) into a MediaMTX `udp+mpegts` listener on `vod/<id>`.
 
-  - **MPEG-TS / UDP** (primary): full copy including MISB KLV into MediaMTX,
-    which re-serves RTSP/RTMP pull (FFmpeg RTSP cannot carry `bin_data` / KLV)
-  - **RTMP** (secondary): A/V only for simple players (FLV cannot carry KLV)
+  MediaMTX re-serves that path as RTSP/RTMP for pull clients. A second FFmpeg
+  RTMP publish to the same path is not used — the path can only have one source.
   """
 
   use GenServer
@@ -214,30 +214,19 @@ defmodule DroneFeed.Streaming.Publisher do
 
   defp start_ffmpeg_processes(%Flight{} = flight, ts_path, udp_port)
        when is_binary(ts_path) and is_integer(udp_port) do
-    Enum.reduce(["ffmpeg-mpegts", "ffmpeg-rtmp"], {[], %{}}, fn label, {ports, labels} ->
-      case open_one(flight, ts_path, udp_port, label) do
-        nil ->
-          {ports, labels}
-
-        port ->
-          {[port | ports], Map.put(labels, port, label)}
-      end
-    end)
-    |> then(fn {ports, labels} -> {Enum.reverse(ports), labels} end)
+    case open_one(flight, ts_path, udp_port, "ffmpeg-mpegts") do
+      nil -> {[], %{}}
+      port -> {[port], %{port => "ffmpeg-mpegts"}}
+    end
   end
 
-  defp open_one(flight, ts_path, udp_port, label) do
-    args =
-      case label do
-        "ffmpeg-mpegts" -> mpegts_udp_args(flight, ts_path, udp_port)
-        "ffmpeg-rtmp" -> rtmp_av_args(flight, ts_path)
-        _ -> nil
-      end
-
-    if args, do: open_ffmpeg(flight.id, args, label), else: nil
+  defp open_one(flight, ts_path, udp_port, "ffmpeg-mpegts") do
+    open_ffmpeg(flight.id, mpegts_udp_args(ts_path, udp_port), "ffmpeg-mpegts")
   end
 
-  defp mpegts_udp_args(%Flight{} = _flight, ts_path, udp_port) do
+  defp open_one(_flight, _ts_path, _udp_port, _label), do: nil
+
+  defp mpegts_udp_args(ts_path, udp_port) do
     target = MediaURLs.publish_udp_mpegts_url(udp_port)
 
     [
@@ -255,30 +244,6 @@ defmodule DroneFeed.Streaming.Publisher do
       "copy",
       "-f",
       "mpegts",
-      target
-    ]
-  end
-
-  defp rtmp_av_args(%Flight{} = flight, ts_path) do
-    target = MediaURLs.publish_target(:rtmp, :vod, flight.id, flight.stream_key)
-
-    [
-      "-hide_banner",
-      "-loglevel",
-      "warning",
-      "-re",
-      "-stream_loop",
-      "-1",
-      "-i",
-      ts_path,
-      "-map",
-      "0:v:0?",
-      "-map",
-      "0:a:0?",
-      "-c",
-      "copy",
-      "-f",
-      "flv",
       target
     ]
   end
