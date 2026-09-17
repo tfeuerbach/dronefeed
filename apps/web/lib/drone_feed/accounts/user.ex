@@ -142,10 +142,13 @@ defmodule DroneFeed.Accounts.User do
   defp validate_password(changeset, opts) do
     changeset
     |> validate_required([:password])
-    |> validate_length(:password, min: 12, max: 72)
+    |> validate_length(:password, min: 8, max: 72)
+    |> validate_format(:password, ~r/\d/, message: "must include at least one number")
+    |> validate_format(:password, ~r/[^A-Za-z0-9\s]/,
+      message: "must include at least one symbol"
+    )
     |> maybe_hash_password(opts)
   end
-
   defp maybe_hash_password(changeset, opts) do
     hash_password? = Keyword.get(opts, :hash_password, true)
     password = get_change(changeset, :password)
@@ -155,6 +158,35 @@ defmodule DroneFeed.Accounts.User do
       |> validate_length(:password, max: 72, count: :bytes)
       |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
       |> delete_change(:password)
+    else
+      changeset
+    end
+  end
+
+  @doc """
+  Admin (or settings) changeset for profile fields, including email.
+  Unlike `email_changeset/3`, email may stay the same without error.
+  """
+  def profile_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:email, :first_name, :last_name, :organization, :location])
+    |> validate_required([:email, :first_name, :last_name, :organization, :location])
+    |> validate_length(:first_name, min: 1, max: 80)
+    |> validate_length(:last_name, min: 1, max: 80)
+    |> validate_length(:organization, min: 1, max: 160)
+    |> validate_length(:location, min: 1, max: 160)
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    |> validate_length(:email, max: 160)
+    |> maybe_validate_unique_email(opts)
+  end
+
+  defp maybe_validate_unique_email(changeset, opts) do
+    if Keyword.get(opts, :validate_unique, true) do
+      changeset
+      |> unsafe_validate_unique(:email, DroneFeed.Repo)
+      |> unique_constraint(:email)
     else
       changeset
     end

@@ -27,12 +27,21 @@ import topbar from "../vendor/topbar"
 import {FlightDeck} from "./hooks/flight_deck"
 import {FlightTerminal} from "./hooks/flight_terminal"
 import {PageMotion} from "./hooks/page_motion"
+import {LocationSuggest} from "./hooks/location_suggest"
+import {PasswordReveal} from "./hooks/password_reveal"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, FlightDeck, FlightTerminal, PageMotion},
+  hooks: {
+    ...colocatedHooks,
+    FlightDeck,
+    FlightTerminal,
+    PageMotion,
+    LocationSuggest,
+    PasswordReveal,
+  },
 })
 
 // Show progress bar on live navigation and form submits

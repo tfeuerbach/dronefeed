@@ -15,34 +15,43 @@ Authenticated research webapp for uploading drone flights (FMV + SRT/KLV) and pu
 
 ## Architecture
 
-```text
-                    ┌─────────────────────────────────────────┐
-                    │              Phoenix (web)                │
-  Upload / Live ───►│  auth · flights UI · MediaMTX webhook   │
-                    └───────────────┬─────────────────────────┘
-                                    │
-         recorded flights           │           live companion
-         ┌──────────────────────────┼──────────────────────────┐
-         ▼                          │                          ▼
-  Consumer DJI                 Enterprise              MediaMTX path
-  MP4 + .SRT                   TS + KLV                /live/<id>
-         │                          │
-         ▼                          ▼
-  SRT → MISB KLV               remux / passthrough
-  then mux into                (already has data PID)
-  publish_stanag.ts ───────────────┬───────────────────┘
-                                   │
-                                   ▼
-                            FFmpeg publishers
-                         ┌─────────┴─────────┐
-                         ▼                   ▼
-                   RTSP :8554            RTMP :1935
-              FMV + in-band KLV       video/audio only
-              (primary research)      (simple players)
-                         │
-                         ▼
-                      MediaMTX
-                   pull with stream key
+```mermaid
+flowchart TB
+  subgraph clients["Clients"]
+    UP["Upload / browser UI"]
+    LIVE["Live companion app"]
+    PULL["Research tools"]
+  end
+
+  subgraph phoenix["Phoenix"]
+    WEB["Auth · flights UI · MediaMTX webhook · FFmpeg supervision"]
+  end
+
+  subgraph recorded["Recorded flights"]
+    DJI["Consumer DJI — MP4 + .SRT"]
+    ENT["Enterprise — TS + KLV"]
+    MUX["mux_to_stanag.py<br/>SRT → MISB KLV or remux"]
+    TS["publish_stanag.ts"]
+    DJI --> MUX
+    ENT --> MUX
+    MUX --> TS
+  end
+
+  subgraph egress["Publish egress"]
+    FF["FFmpeg loop publishers"]
+    RTSP["RTSP :8554 — FMV + in-band KLV"]
+    RTMP["RTMP :1935 — video/audio only"]
+    MTX["MediaMTX — stream-key auth"]
+    FF --> RTSP --> MTX
+    FF --> RTMP --> MTX
+  end
+
+  UP --> WEB
+  LIVE -->|live ingest path| MTX
+  WEB --> DJI
+  WEB --> ENT
+  TS --> FF
+  PULL -->|pull vod / live| MTX
 ```
 
 **Recorded publish (Public feed on)**
@@ -104,7 +113,7 @@ See [deploy/README.md](deploy/README.md) for ports, EC2 sizing, DNS, and Let's E
 cd deploy
 cp .env.example .env
 # set SECRET_KEY_BASE, PHX_HOST, ACME_EMAIL, POSTGRES_PASSWORD,
-# ADMIN_EMAIL, ADMIN_PASSWORD (≥12 chars), ADMIN_CONTACT, MEDIA_HOST
+# ADMIN_EMAIL, ADMIN_PASSWORD (≥8 chars), ADMIN_CONTACT, MEDIA_HOST
 docker compose --env-file .env up -d --build
 ```
 

@@ -12,7 +12,7 @@ defmodule DroneFeedWeb.AdminLive.Index do
         <.header>
           Admin
           <:subtitle>
-            Approve account requests, manage roles, and review inbox notifications.
+            Approve account requests, correct user profiles, manage roles, and review inbox notifications.
           </:subtitle>
           <:actions>
             <button
@@ -209,53 +209,124 @@ defmodule DroneFeedWeb.AdminLive.Index do
               <div class="df-admin-col df-admin-col--meta">Joined</div>
             </div>
 
-            <article
-              :for={{user, i} <- Enum.with_index(@users)}
-              class="df-admin-row df-reveal-item"
-              style={"--df-i: #{i + 3}"}
-            >
-              <div class="df-admin-col df-admin-col--id min-w-0">
-                <p class="truncate font-medium">{User.display_name(user)}</p>
-                <p class="truncate font-mono text-xs text-base-content/50">{user.email}</p>
-                <p class="truncate text-xs text-base-content/45">
-                  {user.organization || "—"}
-                </p>
-              </div>
+            <div :for={{user, i} <- Enum.with_index(@users)} class="contents">
+              <article
+                class="df-admin-row df-reveal-item"
+                style={"--df-i: #{i + 3}"}
+              >
+                <div class="df-admin-col df-admin-col--id min-w-0">
+                  <p class="truncate font-medium">{User.display_name(user)}</p>
+                  <p class="truncate font-mono text-xs text-base-content/50">{user.email}</p>
+                  <p class="truncate text-xs text-base-content/45">
+                    {user.organization || "—"}
+                    <span :if={user.location} class="text-base-content/30">·</span>
+                    {user.location}
+                  </p>
+                </div>
 
-              <div class="df-admin-col df-admin-col--status">
-                <span class={status_pill_class(user.status)} title={human_status(user.status)}>
-                  {short_status(user.status)}
-                </span>
-              </div>
+                <div class="df-admin-col df-admin-col--status">
+                  <span class={status_pill_class(user.status)} title={human_status(user.status)}>
+                    {short_status(user.status)}
+                  </span>
+                </div>
 
-              <div class="df-admin-col df-admin-col--role">
-                <form phx-change="set_role" class="m-0 contents">
-                  <input type="hidden" name="user_id" value={user.id} />
-                  <label class="sr-only" for={"role-#{user.id}"}>Group</label>
-                  <select
-                    id={"role-#{user.id}"}
-                    name="role"
-                    class="df-role-select"
-                    disabled={user.id == @current_scope.user.id}
-                    title={
-                      if(user.id == @current_scope.user.id,
-                        do: "You cannot change your own group",
-                        else: "Change group"
-                      )
-                    }
+                <div class="df-admin-col df-admin-col--role">
+                  <form phx-change="set_role" class="m-0 contents">
+                    <input type="hidden" name="user_id" value={user.id} />
+                    <label class="sr-only" for={"role-#{user.id}"}>Group</label>
+                    <select
+                      id={"role-#{user.id}"}
+                      name="role"
+                      class="df-role-select"
+                      disabled={user.id == @current_scope.user.id}
+                      title={
+                        if(user.id == @current_scope.user.id,
+                          do: "You cannot change your own group",
+                          else: "Change group"
+                        )
+                      }
+                    >
+                      <option value="user" selected={user.role == "user"}>User</option>
+                      <option value="admin" selected={user.role == "admin"}>Admin</option>
+                    </select>
+                  </form>
+                </div>
+
+                <div class="df-admin-col df-admin-col--actions">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    phx-click="edit_profile"
+                    phx-value-user_id={user.id}
+                    aria-expanded={@editing_user_id == user.id}
                   >
-                    <option value="user" selected={user.role == "user"}>User</option>
-                    <option value="admin" selected={user.role == "admin"}>Admin</option>
-                  </select>
-                </form>
-              </div>
+                    {if @editing_user_id == user.id, do: "Close", else: "Edit"}
+                  </button>
+                </div>
 
-              <div class="df-admin-col df-admin-col--actions" aria-hidden="true"></div>
+                <div class="df-admin-col df-admin-col--meta">
+                  <span class="df-admin-meta">{format_dt(user.inserted_at)}</span>
+                </div>
+              </article>
 
-              <div class="df-admin-col df-admin-col--meta">
-                <span class="df-admin-meta">{format_dt(user.inserted_at)}</span>
+              <div
+                :if={@editing_user_id == user.id && @profile_form}
+                class="df-admin-edit"
+                id={"profile-edit-#{user.id}"}
+              >
+                <.form
+                  for={@profile_form}
+                  id={"profile-form-#{user.id}"}
+                  phx-change="validate_profile"
+                  phx-submit="save_profile"
+                  class="df-admin-edit-form"
+                >
+                  <input type="hidden" name="user_id" value={user.id} />
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <.input
+                      field={@profile_form[:first_name]}
+                      type="text"
+                      label="First name"
+                      required
+                    />
+                    <.input
+                      field={@profile_form[:last_name]}
+                      type="text"
+                      label="Last name"
+                      required
+                    />
+                  </div>
+                  <.input field={@profile_form[:email]} type="email" label="Email" required />
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <.input
+                      field={@profile_form[:organization]}
+                      type="text"
+                      label="Organization"
+                      required
+                    />
+                    <.input
+                      field={@profile_form[:location]}
+                      type="location"
+                      label="Location"
+                      required
+                      placeholder="Start typing a city…"
+                    />
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <.button class="btn btn-primary btn-sm" phx-disable-with="Saving…">
+                      Save profile
+                    </.button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      phx-click="cancel_edit_profile"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </.form>
               </div>
-            </article>
+            </div>
           </div>
         </section>
       </div>
@@ -294,6 +365,8 @@ defmodule DroneFeedWeb.AdminLive.Index do
     {:ok,
      socket
      |> assign(:page_title, "Admin")
+     |> assign(:editing_user_id, nil)
+     |> assign(:profile_form, nil)
      |> refresh_admin_assigns()}
   end
 
@@ -371,6 +444,58 @@ defmodule DroneFeedWeb.AdminLive.Index do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not update role.")}
     end
+  end
+
+  def handle_event("edit_profile", %{"user_id" => id}, socket) do
+    if socket.assigns.editing_user_id == id do
+      {:noreply, clear_profile_edit(socket)}
+    else
+      user = Accounts.get_user!(id)
+
+      {:noreply,
+       socket
+       |> assign(:editing_user_id, id)
+       |> assign(:profile_form, to_form(Accounts.change_user_profile(user), as: :user))}
+    end
+  end
+
+  def handle_event("cancel_edit_profile", _params, socket) do
+    {:noreply, clear_profile_edit(socket)}
+  end
+
+  def handle_event("validate_profile", %{"user_id" => id, "user" => params}, socket) do
+    user = Accounts.get_user!(id)
+
+    form =
+      user
+      |> Accounts.change_user_profile(params, validate_unique: false)
+      |> Map.put(:action, :validate)
+      |> to_form(as: :user)
+
+    {:noreply, assign(socket, :profile_form, form)}
+  end
+
+  def handle_event("save_profile", %{"user_id" => id, "user" => params}, socket) do
+    admin = socket.assigns.current_scope.user
+    user = Accounts.get_user!(id)
+
+    case Accounts.update_user_profile(admin, user, params) do
+      {:ok, user} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Updated profile for #{User.display_name(user)}.")
+         |> clear_profile_edit()
+         |> refresh_admin_assigns()}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :profile_form, to_form(changeset, as: :user))}
+    end
+  end
+
+  defp clear_profile_edit(socket) do
+    socket
+    |> assign(:editing_user_id, nil)
+    |> assign(:profile_form, nil)
   end
 
   defp refresh_admin_assigns(socket) do

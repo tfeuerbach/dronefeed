@@ -247,6 +247,21 @@ defmodule DroneFeed.Accounts do
     end
   end
 
+  def change_user_profile(%User{} = user, attrs \\ %{}, opts \\ []) do
+    User.profile_changeset(user, attrs, opts)
+  end
+
+  @doc """
+  Lets an admin correct a user's profile fields (name, organization, location, email).
+  """
+  def update_user_profile(%User{} = admin, %User{} = user, attrs) do
+    unless User.admin?(admin), do: raise("only admins can update profiles")
+
+    user
+    |> User.profile_changeset(attrs)
+    |> Repo.update()
+  end
+
   ## Registration (tests / fixtures)
 
   def register_user(attrs) do

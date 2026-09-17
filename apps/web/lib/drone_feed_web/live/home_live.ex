@@ -6,7 +6,6 @@ defmodule DroneFeedWeb.HomeLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} main_class="df-home-main">
       <section class="df-home relative overflow-hidden">
-        <div class="df-home-glow" aria-hidden="true" />
         <div class="relative mx-auto flex min-h-[70vh] max-w-5xl flex-col justify-center gap-10 px-4 py-16 sm:px-6">
           <div class="max-w-2xl space-y-5">
             <img

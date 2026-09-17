@@ -51,11 +51,11 @@ defmodule DroneFeedWeb.UserLive.RequestAccess do
             />
             <.input
               field={@form[:location]}
-              type="text"
+              type="location"
               label="Location"
               required
               autocomplete="address-level2"
-              placeholder="City, country or lab site"
+              placeholder="Start typing a city…"
             />
             <.input
               field={@form[:password]}
@@ -65,6 +65,9 @@ defmodule DroneFeedWeb.UserLive.RequestAccess do
               autocomplete="new-password"
               phx-debounce="blur"
             />
+            <p class="df-field-hint -mt-1 mb-2">
+              At least 8 characters, with one number and one symbol.
+            </p>
             <.input
               field={@form[:password_confirmation]}
               type="password"

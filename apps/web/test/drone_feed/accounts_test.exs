@@ -6,6 +6,74 @@ defmodule DroneFeed.AccountsTest do
   import DroneFeed.AccountsFixtures
   alias DroneFeed.Accounts.{User, UserToken}
 
+  describe "update_user_profile/3" do
+    test "admin can correct profile fields including organization" do
+      admin = admin_fixture()
+      user = user_fixture(organization: "Typo Labs", location: "Old City")
+
+      assert {:ok, updated} =
+               Accounts.update_user_profile(admin, user, %{
+                 first_name: user.first_name,
+                 last_name: user.last_name,
+                 email: user.email,
+                 organization: "Correct Labs",
+                 location: "New City"
+               })
+
+      assert updated.organization == "Correct Labs"
+      assert updated.location == "New City"
+    end
+
+    test "admin can change email when unique" do
+      admin = admin_fixture()
+      user = user_fixture()
+      new_email = unique_user_email()
+
+      assert {:ok, updated} =
+               Accounts.update_user_profile(admin, user, %{
+                 first_name: user.first_name,
+                 last_name: user.last_name,
+                 email: new_email,
+                 organization: user.organization,
+                 location: user.location
+               })
+
+      assert updated.email == new_email
+    end
+
+    test "rejects duplicate email" do
+      admin = admin_fixture()
+      other = user_fixture()
+      user = user_fixture()
+
+      assert {:error, changeset} =
+               Accounts.update_user_profile(admin, user, %{
+                 first_name: user.first_name,
+                 last_name: user.last_name,
+                 email: other.email,
+                 organization: user.organization,
+                 location: user.location
+               })
+
+      assert "has already been taken" in errors_on(changeset).email
+    end
+
+    test "raises when caller is not an admin" do
+      caller = user_fixture()
+      user = user_fixture()
+
+      assert_raise RuntimeError, ~r/only admins/, fn ->
+        Accounts.update_user_profile(caller, user, %{
+          first_name: "X",
+          last_name: "Y",
+          email: user.email,
+          organization: "Org",
+          location: "Loc"
+        })
+      end
+    end
+  end
+
   describe "get_user_by_email/1" do
     test "does not return the user if the email does not exist" do
       refute Accounts.get_user_by_email("unknown@example.com")
@@ -19,7 +87,7 @@ defmodule DroneFeed.AccountsTest do
 
   describe "get_user_by_email_and_password/2" do
     test "does not return the user if the email does not exist" do
-      refute Accounts.get_user_by_email_and_password("unknown@example.com", "hello world!")
+      refute Accounts.get_user_by_email_and_password("unknown@example.com", "hello world1!")
     end
 
     test "does not return the user if the password is not valid" do
@@ -191,13 +259,13 @@ defmodule DroneFeed.AccountsTest do
         Accounts.change_user_password(
           %User{},
           %{
-            "password" => "new valid password"
+            "password" => "new valid pw1!"
           },
           hash_password: false
         )
 
       assert changeset.valid?
-      assert get_change(changeset, :password) == "new valid password"
+      assert get_change(changeset, :password) == "new valid pw1!"
       assert is_nil(get_change(changeset, :hashed_password))
     end
   end
@@ -210,14 +278,25 @@ defmodule DroneFeed.AccountsTest do
     test "validates password", %{user: user} do
       {:error, changeset} =
         Accounts.update_user_password(user, %{
-          password: "not valid",
+          password: "short1!",
           password_confirmation: "another"
         })
 
       assert %{
-               password: ["should be at least 12 character(s)"],
+               password: ["should be at least 8 character(s)"],
                password_confirmation: ["does not match password"]
              } = errors_on(changeset)
+    end
+
+    test "requires a number and a symbol", %{user: user} do
+      {:error, changeset} =
+        Accounts.update_user_password(user, %{
+          password: "longenough",
+          password_confirmation: "longenough"
+        })
+
+      assert "must include at least one number" in errors_on(changeset).password
+      assert "must include at least one symbol" in errors_on(changeset).password
     end
 
     test "validates maximum values for password for security", %{user: user} do
@@ -232,12 +311,12 @@ defmodule DroneFeed.AccountsTest do
     test "updates the password", %{user: user} do
       {:ok, {user, expired_tokens}} =
         Accounts.update_user_password(user, %{
-          password: "new valid password"
+          password: "new valid pw1!"
         })
 
       assert expired_tokens == []
       assert is_nil(user.password)
-      assert Accounts.get_user_by_email_and_password(user.email, "new valid password")
+      assert Accounts.get_user_by_email_and_password(user.email, "new valid pw1!")
     end
 
     test "deletes all tokens for the given user", %{user: user} do
@@ -245,7 +324,7 @@ defmodule DroneFeed.AccountsTest do
 
       {:ok, {_, _}} =
         Accounts.update_user_password(user, %{
-          password: "new valid password"
+          password: "new valid pw1!"
         })
 
       refute Repo.get_by(UserToken, user_id: user.id)

@@ -22,7 +22,7 @@ defmodule DroneFeed.Release do
 
   @doc """
   Creates or promotes an admin user when ADMIN_EMAIL + ADMIN_PASSWORD are set.
-  Password must be at least 12 characters for new accounts.
+  Password must be at least 8 characters for new accounts.
   Existing accounts with the same email are promoted to the admin group.
   """
   def ensure_admin do
@@ -49,10 +49,10 @@ defmodule DroneFeed.Release do
 
     case DroneFeed.Repo.get_by(DroneFeed.Accounts.User, email: email) do
       nil ->
-        if not present?(password) or String.length(password) < 12 do
+        if not present?(password) or String.length(password) < 8 do
           IO.puts(
             :stderr,
-            "ADMIN_PASSWORD must be at least 12 characters to bootstrap a new admin; skipping"
+            "ADMIN_PASSWORD must be at least 8 characters to bootstrap a new admin; skipping"
           )
 
           :ok
@@ -85,7 +85,7 @@ defmodule DroneFeed.Release do
         }
 
         attrs =
-          if present?(password) and String.length(password) >= 12 do
+          if present?(password) and String.length(password) >= 8 do
             Map.put(attrs, :hashed_password, Bcrypt.hash_pwd_salt(password))
           else
             attrs

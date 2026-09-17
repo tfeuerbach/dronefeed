@@ -170,7 +170,7 @@ defmodule DroneFeedWeb.CoreComponents do
 
   attr :type, :string,
     default: "text",
-    values: ~w(checkbox color date datetime-local email file month number password
+    values: ~w(checkbox color date datetime-local email file location month number password
                search select tel text textarea time url week hidden)
 
   attr :field, Phoenix.HTML.FormField,
@@ -279,7 +279,92 @@ defmodule DroneFeedWeb.CoreComponents do
     """
   end
 
-  # All other inputs text, datetime-local, url, password, etc. are handled here...
+  def input(%{type: "password"} = assigns) do
+    ~H"""
+    <div class="fieldset mb-2" id={"#{@id}-wrap"} phx-hook="PasswordReveal" data-revealed="false">
+      <label for={@id}>
+        <span :if={@label} class="label mb-1">{@label}</span>
+        <div class="df-password-field relative">
+          <input
+            type="password"
+            name={@name}
+            id={@id}
+            value={Phoenix.HTML.Form.normalize_value("password", @value)}
+            class={[
+              @class || "w-full input df-password-input",
+              @errors != [] && (@error_class || "input-error")
+            ]}
+            {@rest}
+          />
+          <button
+            type="button"
+            class="df-password-reveal"
+            data-password-reveal
+            aria-label="Show password"
+            aria-pressed="false"
+            title="Show password"
+          >
+            <span class="df-password-reveal__show" aria-hidden="true">
+              <.icon name="hero-eye" class="size-4" />
+            </span>
+            <span class="df-password-reveal__hide" aria-hidden="true">
+              <.icon name="hero-eye-slash" class="size-4" />
+            </span>
+          </button>
+        </div>
+      </label>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  def input(%{type: "location"} = assigns) do
+    places_json = Jason.encode!(DroneFeed.Locations.all())
+    list_id = "#{assigns.id}-suggestions"
+    assigns = assign(assigns, places_json: places_json, list_id: list_id)
+
+    ~H"""
+    <div
+      class="fieldset mb-2"
+      id={"#{@id}-wrap"}
+      phx-hook="LocationSuggest"
+      data-places={@places_json}
+    >
+      <label for={@id}>
+        <span :if={@label} class="label mb-1">{@label}</span>
+        <div class="df-location-field relative">
+          <input
+            type="text"
+            name={@name}
+            id={@id}
+            value={Phoenix.HTML.Form.normalize_value("text", @value)}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls={@list_id}
+            data-location-input
+            class={[
+              @class || "w-full input",
+              @errors != [] && (@error_class || "input-error")
+            ]}
+            {@rest}
+          />
+          <ul
+            id={@list_id}
+            class="df-location-list"
+            role="listbox"
+            data-location-list
+            hidden
+          >
+          </ul>
+        </div>
+      </label>
+      <.error :for={msg <- @errors}>{msg}</.error>
+    </div>
+    """
+  end
+
+  # All other inputs text, datetime-local, url, etc. are handled here...
   def input(assigns) do
     ~H"""
     <div class="fieldset mb-2">

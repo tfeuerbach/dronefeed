@@ -44,6 +44,9 @@ defmodule DroneFeedWeb.UserLive.Settings do
               spellcheck="false"
               required
             />
+            <p class="df-field-hint -mt-1 mb-2">
+              At least 8 characters, with one number and one symbol.
+            </p>
             <.input
               field={@password_form[:password_confirmation]}
               type="password"

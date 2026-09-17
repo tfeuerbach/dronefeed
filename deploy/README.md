@@ -26,7 +26,7 @@ Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates 
 cd deploy
 cp .env.example .env
 # fill SECRET_KEY_BASE, PHX_HOST, ACME_EMAIL, POSTGRES_PASSWORD,
-# ADMIN_EMAIL / ADMIN_PASSWORD (≥12 chars, first boot), ADMIN_CONTACT,
+# ADMIN_EMAIL / ADMIN_PASSWORD (≥8 chars, first boot), ADMIN_CONTACT,
 # and SMTP_HOST / SMTP_USER / SMTP_PASSWORD for dronefeed@tfeuerbach.dev
 
 docker compose --env-file .env up -d --build
