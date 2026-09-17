@@ -1,0 +1,15 @@
+[Unit]
+Description=MediaMTX for DroneFeed
+After=network.target drone-feed.service
+Wants=drone-feed.service
+
+[Service]
+Type=simple
+User=drone-feed
+ExecStart=/usr/local/bin/mediamtx /etc/drone-feed/mediamtx.yml
+Environment=MTX_AUTHHTTPADDRESS=http://127.0.0.1:4000/api/mediamtx/auth
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

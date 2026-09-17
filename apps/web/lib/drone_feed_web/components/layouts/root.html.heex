@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="signal">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <meta
+      name="description"
+      content="DroneFeed — upload research flights with telemetry and publish pullable RTMP/RTSP feeds for your team."
+    />
+    <meta name="application-name" content="DroneFeed" />
+    <meta name="theme-color" content="#0D9F8F" />
+    <meta property="og:site_name" content="DroneFeed" />
+    <meta property="og:title" content="DroneFeed" />
+    <meta
+      property="og:description"
+      content="Upload research flights with telemetry and publish pullable RTMP/RTSP feeds."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="DroneFeed" />
+    <meta
+      name="twitter:description"
+      content="Upload research flights with telemetry and publish pullable RTMP/RTSP feeds."
+    />
+    <.live_title
+      default="DroneFeed"
+      suffix={if(assigns[:page_title] not in [nil, ""], do: " · DroneFeed", else: nil)}
+      phx-no-format
+    >
+      {assigns[:page_title]}
+    </.live_title>
+    <link rel="icon" type="image/svg+xml" href={~p"/favicon.svg"} />
+    <link rel="icon" type="image/x-icon" href={~p"/favicon.ico"} />
+    <link rel="apple-touch-icon" href={~p"/images/apple-touch-icon.png"} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+    <script>
+      (() => {
+        const setTheme = (theme) => {
+          localStorage.setItem("phx:theme", theme);
+          document.documentElement.setAttribute("data-theme", theme);
+        };
+        const saved = localStorage.getItem("phx:theme");
+        if (saved === "signal-dark" || saved === "signal") {
+          setTheme(saved);
+        } else {
+          setTheme("signal");
+        }
+        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+      })();
+    </script>
+  </head>
+  <body class="min-h-dvh bg-base-100 text-base-content antialiased">
+    <noscript>
+      <style>
+        .df-page {
+          opacity: 1 !important;
+          transform: none !important;
+          animation: none !important;
+        }
+      </style>
+    </noscript>
+    {@inner_content}
+  </body>
+</html>

@@ -1,0 +1,1040 @@
+/* DroneFeed design system
+   -----------------------
+   Aesthetic: field-ops / mission console — cool slate surfaces, sharp geometry,
+   teal “signal” accents for live/publish state. Not purple, not cream-serif.
+
+   Type:
+     - Sora — UI / display
+     - IBM Plex Mono — stream URLs, keys, timestamps
+
+   Palette (signal / light):
+     ink      #0F1419
+     slate    #1C2430
+     fog      #E8EDF2
+     paper    #F4F7FA
+     signal   #0D9F8F  (primary / live)
+     amber    #D97706  (attention)
+     mute     #64748B
+*/
+
+@import "tailwindcss" source(none);
+@import "phoenix-colocated/drone_feed/colocated.css";
+@source "../css";
+@source "../js";
+@source "../../lib/drone_feed_web";
+@source "../../_build/*/phoenix-colocated/drone_feed/*/";
+
+@plugin "../vendor/heroicons";
+
+@plugin "../vendor/daisyui" {
+  themes: false;
+}
+
+@plugin "../vendor/daisyui-theme" {
+  name: "signal";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(96.5% 0.006 240);
+  --color-base-200: oklch(93% 0.008 240);
+  --color-base-300: oklch(88% 0.012 240);
+  --color-base-content: oklch(22% 0.02 250);
+  --color-primary: oklch(62% 0.11 180);
+  --color-primary-content: oklch(98% 0.01 180);
+  --color-secondary: oklch(40% 0.03 250);
+  --color-secondary-content: oklch(97% 0.005 250);
+  --color-accent: oklch(70% 0.14 70);
+  --color-accent-content: oklch(25% 0.04 70);
+  --color-neutral: oklch(28% 0.025 250);
+  --color-neutral-content: oklch(96% 0.005 250);
+  --color-info: oklch(60% 0.1 230);
+  --color-info-content: oklch(98% 0.01 230);
+  --color-success: oklch(62% 0.11 180);
+  --color-success-content: oklch(98% 0.01 180);
+  --color-warning: oklch(72% 0.14 70);
+  --color-warning-content: oklch(25% 0.04 70);
+  --color-error: oklch(58% 0.2 25);
+  --color-error-content: oklch(98% 0.01 25);
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "../vendor/daisyui-theme" {
+  name: "signal-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(18% 0.02 250);
+  --color-base-200: oklch(22% 0.022 250);
+  --color-base-300: oklch(28% 0.025 250);
+  --color-base-content: oklch(94% 0.01 240);
+  --color-primary: oklch(70% 0.12 180);
+  --color-primary-content: oklch(18% 0.02 180);
+  --color-secondary: oklch(55% 0.04 250);
+  --color-secondary-content: oklch(96% 0.005 250);
+  --color-accent: oklch(75% 0.14 70);
+  --color-accent-content: oklch(22% 0.04 70);
+  --color-neutral: oklch(32% 0.025 250);
+  --color-neutral-content: oklch(94% 0.01 240);
+  --color-info: oklch(68% 0.1 230);
+  --color-info-content: oklch(18% 0.02 230);
+  --color-success: oklch(70% 0.12 180);
+  --color-success-content: oklch(18% 0.02 180);
+  --color-warning: oklch(75% 0.14 70);
+  --color-warning-content: oklch(22% 0.04 70);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(98% 0.01 25);
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+@custom-variant dark (&:where([data-theme=signal-dark], [data-theme=signal-dark] *));
+
+[data-phx-session],
+[data-phx-teleported-src] {
+  display: contents;
+}
+
+@theme {
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 100% -20%, oklch(62% 0.11 180 / 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at -10% 100%, oklch(40% 0.03 250 / 0.08), transparent);
+  background-attachment: fixed;
+}
+
+[data-theme="signal-dark"] body {
+  background-image:
+    radial-gradient(ellipse 70% 45% at 100% -10%, oklch(70% 0.12 180 / 0.08), transparent),
+    radial-gradient(ellipse 50% 35% at 0% 100%, oklch(55% 0.04 250 / 0.15), transparent);
+}
+
+.df-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.df-nav {
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 85%, transparent);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.df-nav::after {
+  content: "";
+  display: block;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(62% 0.11 180) 20%,
+    oklch(70% 0.14 70 / 0.6) 55%,
+    transparent 100%
+  );
+  opacity: 0.85;
+}
+
+.df-brand {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+}
+
+.df-brand-mark-img {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.35rem;
+  display: block;
+  flex-shrink: 0;
+}
+
+.df-brand-mark {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.35rem;
+  background: linear-gradient(145deg, oklch(62% 0.11 180), oklch(45% 0.06 220));
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.2);
+  position: relative;
+}
+
+.df-brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: 35% 20% 35% 45%;
+  border-radius: 1px;
+  background: oklch(98% 0.01 180);
+}
+
+.df-main {
+  flex: 1;
+  width: 100%;
+  max-width: 52rem;
+  margin-inline: auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.df-main--wide {
+  max-width: 64rem;
+}
+
+.df-main--theater {
+  max-width: min(92rem, 100%);
+  padding-inline: clamp(0.75rem, 2.2vw, 1.75rem);
+  padding-block: clamp(1.25rem, 2.5vw, 2rem) 3rem;
+}
+
+@media (min-width: 640px) {
+  .df-main {
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .df-main--theater {
+    padding-block: clamp(1.25rem, 2.5vw, 2rem) 3rem;
+    padding-inline: clamp(0.75rem, 2.2vw, 1.75rem);
+  }
+}
+
+.df-flight-page {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.df-flight-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.df-flight-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.df-publish-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: color-mix(in oklch, var(--color-base-content) 72%, transparent);
+}
+
+.df-flight-deck {
+  display: grid;
+  gap: clamp(0.85rem, 1.5vw, 1.15rem);
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "stage"
+    "side"
+    "raw"
+    "urls"
+    "terminal";
+}
+
+.df-flight-stage {
+  grid-area: stage;
+  min-width: 0;
+}
+
+.df-flight-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.85rem, 1.5vw, 1.15rem);
+  min-width: 0;
+}
+
+.df-flight-raw {
+  grid-area: raw;
+}
+
+.df-flight-urls {
+  grid-area: urls;
+}
+
+.df-flight-terminal {
+  grid-area: terminal;
+}
+
+.df-flight-player {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-box);
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+  background: oklch(12% 0.02 220);
+  box-shadow: 0 18px 48px -28px oklch(20% 0.04 220 / 0.55);
+}
+
+.df-flight-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: min(72vh, 52rem);
+  margin-inline: auto;
+  background: oklch(10% 0.02 220);
+  object-fit: contain;
+}
+
+.df-flight-side-head {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.df-flight-side-head--pad {
+  padding: 0.85rem 1rem 0.7rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
+.df-flight-side-head h2,
+.df-flight-band-head h2 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+}
+
+.df-flight-side-head p,
+.df-flight-band-head p {
+  font-size: 0.75rem;
+  color: color-mix(in oklch, var(--color-base-content) 45%, transparent);
+}
+
+.df-flight-readouts {
+  padding: 1rem;
+}
+
+.df-gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.df-flight-map-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 16rem;
+}
+
+.df-flight-map {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 14rem;
+  height: 16rem;
+  background: color-mix(in oklch, var(--color-base-200) 80%, transparent);
+}
+
+.df-flight-band-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
+.df-flight-raw-body {
+  margin: 0;
+  max-height: clamp(12rem, 28vh, 18rem);
+  overflow: auto;
+  padding: 0.85rem 1rem;
+  background: oklch(16% 0.02 220);
+  color: oklch(92% 0.02 180);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.df-flight-raw-live {
+  border-top: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  padding: 0.7rem 1rem;
+  background: color-mix(in oklch, var(--color-base-200) 70%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 8rem;
+  overflow: auto;
+}
+
+.df-flight-raw-live p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1024px) {
+  .df-flight-deck {
+    grid-template-columns: minmax(0, 1fr) clamp(17rem, 24vw, 22.5rem);
+    grid-template-areas:
+      "stage side"
+      "raw raw"
+      "urls urls"
+      "terminal terminal";
+    align-items: stretch;
+  }
+
+  .df-flight-side {
+    max-height: min(72vh, 52rem);
+  }
+
+  .df-flight-map {
+    height: auto;
+    min-height: 0;
+  }
+
+  .df-gauge-grid {
+    /* Sidebar is too narrow for three mono values side-by-side. */
+    grid-template-columns: 1fr;
+  }
+}
+
+.df-gauge {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  background: var(--color-base-200);
+  border-radius: var(--radius-box);
+  padding: 0.75rem;
+}
+
+.df-gauge-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
+.df-gauge-value {
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: clamp(0.72rem, 0.95vw, 0.875rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.df-gallery {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.df-gallery-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 70%, var(--color-base-200));
+  border-radius: var(--radius-box);
+  overflow: hidden;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.df-gallery-card:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.df-gallery-media {
+  position: relative;
+  background: oklch(18% 0.02 220);
+}
+
+.df-gallery-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.df-gallery-live {
+  position: absolute;
+  top: 0.65rem;
+  left: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--color-base-100) 82%, transparent);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.df-gallery-meta {
+  padding: 0.9rem 1rem 1.05rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.df-terminal {
+  height: 18rem;
+  overflow: auto;
+  background: oklch(16% 0.02 220);
+  color: oklch(92% 0.02 180);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  padding: 0.65rem 0.85rem 0.9rem;
+}
+
+.df-terminal-line {
+  display: grid;
+  grid-template-columns: 5.5rem 2.6rem minmax(5rem, 7.5rem) 1fr;
+  gap: 0.55rem;
+  padding: 0.1rem 0;
+  word-break: break-word;
+}
+
+.df-terminal-ts {
+  color: oklch(70% 0.02 220);
+  font-variant-numeric: tabular-nums;
+}
+
+.df-terminal-lvl {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.df-terminal-src {
+  color: oklch(78% 0.06 180);
+}
+
+.df-terminal-debug .df-terminal-lvl {
+  color: oklch(65% 0.02 220);
+}
+
+.df-terminal-info .df-terminal-lvl {
+  color: oklch(78% 0.1 180);
+}
+
+.df-terminal-warn .df-terminal-lvl {
+  color: oklch(78% 0.14 85);
+}
+
+.df-terminal-error .df-terminal-lvl {
+  color: oklch(72% 0.18 25);
+}
+
+.df-terminal-error .df-terminal-msg {
+  color: oklch(82% 0.12 25);
+}
+
+@media (max-width: 720px) {
+  .df-terminal-line {
+    grid-template-columns: 4.5rem 2.4rem 1fr;
+  }
+
+  .df-terminal-src {
+    grid-column: 1 / -1;
+    opacity: 0.85;
+  }
+}
+
+.df-panel {
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 70%, var(--color-base-200));
+  border-radius: var(--radius-box);
+  padding: 1.25rem;
+}
+
+.df-panel-muted {
+  background: var(--color-base-200);
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  border-radius: var(--radius-box);
+  padding: 0.875rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  word-break: break-all;
+}
+
+.df-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: oklch(62% 0.11 180);
+  box-shadow: 0 0 0 0 oklch(62% 0.11 180 / 0.5);
+  animation: df-pulse 1.8s ease-out infinite;
+}
+
+@keyframes df-pulse {
+  0% {
+    box-shadow: 0 0 0 0 oklch(62% 0.11 180 / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px oklch(62% 0.11 180 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(62% 0.11 180 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-live-dot {
+    animation: none;
+  }
+}
+
+.df-auth {
+  max-width: 24rem;
+  margin-inline: auto;
+}
+
+.df-auth.max-w-lg {
+  max-width: 32rem;
+}
+
+.df-home-main {
+  max-width: none;
+  padding-inline: 0;
+  padding-block: 0;
+}
+
+.df-home {
+  min-height: calc(100vh - 4rem);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% 20%, color-mix(in oklch, var(--color-primary) 18%, transparent), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 80%, color-mix(in oklch, var(--color-info) 12%, transparent), transparent 55%),
+    linear-gradient(165deg, var(--color-base-100), var(--color-base-200));
+}
+
+.df-home-glow {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--color-base-content) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--color-base-content) 4%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 40% 40%, black, transparent);
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* --- Motion --- */
+@keyframes df-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes df-page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes df-page-exit {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+}
+
+@keyframes df-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.df-page {
+  min-height: 1px;
+}
+
+.df-page.df-page-pending {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+}
+
+.df-page.df-page-exit {
+  animation: df-page-exit 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.df-page.df-page-enter {
+  animation: df-page-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.df-page.df-page-shown {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+.df-reveal {
+  /* structural hook only — page-level motion handles enters */
+}
+
+.df-reveal-item {
+  /* No per-panel fade: fill-mode:both was starting sections at opacity 0 and
+     causing a visible flicker on first paint / LiveView connect. */
+}
+
+.df-panel {
+  transition:
+    border-color 180ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease;
+}
+
+.df-panel:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 28%, transparent);
+  box-shadow: 0 8px 28px -18px color-mix(in oklch, var(--color-base-content) 35%, transparent);
+}
+
+.df-nav a,
+.df-nav .btn {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.df-brand-mark-img {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.df-brand:hover .df-brand-mark-img {
+  transform: translateY(-1px) scale(1.04);
+}
+
+.btn {
+  transition:
+    transform 140ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    opacity 160ms ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* --- Admin --- */
+.df-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+}
+
+.df-count-pill {
+  display: inline-flex;
+  min-width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  color: var(--color-primary-content);
+  padding: 0.1rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.df-action-cluster {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.df-role-select {
+  appearance: none;
+  box-sizing: border-box;
+  width: 5.75rem;
+  height: 2rem;
+  padding: 0 1.75rem 0 0.7rem;
+  border-radius: 0.375rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  background-color: var(--color-base-100);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748B' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.4rem center;
+  background-repeat: no-repeat;
+  background-size: 0.95rem;
+  color: var(--color-base-content);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.df-role-select:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+}
+
+.df-role-select:focus {
+  outline: 2px solid color-mix(in oklch, var(--color-primary) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.df-role-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: var(--color-base-200);
+}
+
+.df-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 5.25rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.df-status--active {
+  background: color-mix(in oklch, var(--color-success) 18%, transparent);
+  color: color-mix(in oklch, var(--color-success) 75%, var(--color-base-content));
+}
+
+.df-status--pending {
+  background: color-mix(in oklch, var(--color-warning) 22%, transparent);
+  color: color-mix(in oklch, var(--color-warning) 70%, var(--color-base-content));
+}
+
+.df-status--verify {
+  background: color-mix(in oklch, var(--color-info) 18%, transparent);
+  color: color-mix(in oklch, var(--color-info) 70%, var(--color-base-content));
+}
+
+.df-status--rejected {
+  background: color-mix(in oklch, var(--color-error) 16%, transparent);
+  color: color-mix(in oklch, var(--color-error) 75%, var(--color-base-content));
+}
+
+.df-admin-panel {
+  padding: 0;
+}
+
+.df-admin-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    5.25rem
+    5.75rem
+    10.75rem
+    8.75rem;
+  column-gap: 0.75rem;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  transition: background-color 180ms ease;
+}
+
+.df-admin-row:last-child {
+  border-bottom: 0;
+}
+
+.df-admin-row--unread {
+  background: color-mix(in oklch, var(--color-primary) 4%, transparent);
+}
+
+.df-admin-row--head {
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+  background: color-mix(in oklch, var(--color-base-200) 55%, transparent);
+  border-bottom-color: color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-base-content) 45%, transparent);
+}
+
+.df-admin-col {
+  min-width: 0;
+}
+
+.df-admin-col--status,
+.df-admin-col--role,
+.df-admin-col--actions,
+.df-admin-col--meta {
+  display: flex;
+  align-items: center;
+}
+
+.df-admin-col--status {
+  justify-content: flex-start;
+}
+
+.df-admin-col--role {
+  justify-content: flex-start;
+}
+
+.df-admin-col--actions {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.df-admin-col--meta {
+  justify-content: flex-end;
+}
+
+.df-admin-meta {
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: color-mix(in oklch, var(--color-base-content) 42%, transparent);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.df-admin-org {
+  max-width: 100%;
+}
+
+.df-user-row,
+.df-pending-card,
+.df-inbox-row {
+  /* legacy hooks kept as no-ops after admin grid rewrite */
+}
+
+@media (max-width: 900px) {
+  .df-admin-row {
+    grid-template-columns:
+      minmax(0, 1fr)
+      5.25rem
+      5.75rem
+      10.75rem;
+  }
+
+  .df-admin-col--meta {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .df-admin-row {
+    grid-template-columns: minmax(0, 1fr) 5.25rem;
+    row-gap: 0.65rem;
+  }
+
+  .df-admin-col--role {
+    grid-column: 1;
+  }
+
+  .df-admin-col--actions {
+    grid-column: 1 / -1;
+  }
+
+  .df-admin-row--head .df-admin-col--role,
+  .df-admin-row--head .df-admin-col--actions {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-page {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
+  }
+
+  .df-page-enter,
+  .df-page-exit,
+  .df-page-enter .df-panel,
+  .df-page-enter .df-admin-panel,
+  .df-page-enter .df-auth,
+  .df-page-enter .df-home,
+  .df-page-enter header,
+  .df-page-enter .df-section-label,
+  .df-page-enter .df-reveal-item,
+  .df-reveal,
+  .df-reveal-item,
+  .df-live-dot {
+    animation: none !important;
+  }
+
+  .df-panel,
+  .df-nav a,
+  .df-nav .btn,
+  .df-brand-mark-img,
+  .btn {
+    transition: none !important;
+  }
+}

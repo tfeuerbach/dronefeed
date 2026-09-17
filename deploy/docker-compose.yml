@@ -1,0 +1,93 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-drone_feed_prod}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      PHX_SERVER: "true"
+      PORT: "4000"
+      DATABASE_URL: ecto://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB:-drone_feed_prod}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}
+      PHX_HOST: ${PHX_HOST:?set PHX_HOST}
+      MEDIA_HOST: ${MEDIA_HOST:-}
+      MEDIA_IP: ${MEDIA_IP:-}
+      RTMP_PORT: ${RTMP_PORT:-1935}
+      RTSP_PORT: ${RTSP_PORT:-8554}
+      MEDIAMTX_RTMP_URL: rtmp://mediamtx:1935
+      STORAGE_ROOT: /var/lib/drone-feed/storage
+      RETENTION_DAYS: ${RETENTION_DAYS:-5}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_CONTACT: ${ADMIN_CONTACT:-dronefeed@tfeuerbach.dev}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-dronefeed@tfeuerbach.dev}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-DroneFeed}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      MUX_SCRIPT: /app/scripts/mux_to_stanag.py
+      EXTRACT_KLV_SCRIPT: /app/scripts/extract_klv_track.py
+      PYTHON_PATH: python3
+    volumes:
+      - flight_storage:/var/lib/drone-feed/storage
+    expose:
+      - "4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.9-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PHX_HOST: ${PHX_HOST:?set PHX_HOST}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.11.3
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_AUTHHTTPADDRESS: http://web:4000/api/mediamtx/auth
+    ports:
+      - "${RTMP_PORT:-1935}:1935"
+      - "${RTSP_PORT:-8554}:8554"
+      - "${HLS_PORT:-8888}:8888"
+    depends_on:
+      web:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  flight_storage:
+  caddy_data:
+  caddy_config:

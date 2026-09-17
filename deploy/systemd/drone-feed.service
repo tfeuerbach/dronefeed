@@ -1,0 +1,20 @@
+[Unit]
+Description=DroneFeed Phoenix control plane
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=drone-feed
+WorkingDirectory=/opt/drone-feed
+Environment=PHX_SERVER=true
+Environment=PORT=4000
+Environment=MIX_ENV=prod
+EnvironmentFile=-/etc/drone-feed/env
+ExecStart=/opt/drone-feed/bin/drone_feed start
+ExecStop=/opt/drone-feed/bin/drone_feed stop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

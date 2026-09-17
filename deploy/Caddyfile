@@ -1,0 +1,9 @@
+{
+	# Let's Encrypt account email (renewal notices)
+	email {$ACME_EMAIL}
+}
+
+{$PHX_HOST} {
+	encode gzip
+	reverse_proxy web:4000
+}

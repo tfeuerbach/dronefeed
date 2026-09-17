@@ -1,0 +1,10 @@
+/storage/
+/sample-data/*
+!/sample-data/README.md
+/tmp/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+deploy/.env
