@@ -1,8 +1,5 @@
 defmodule DroneFeed.Locations do
-  @moduledoc """
-  Curated place names for location typeahead ("City, Region/Country").
-  Free-text entry is still allowed; this list only powers suggestions.
-  """
+  @moduledoc "Place suggestions for the location typeahead."
 
   @places [
     "Aberdeen, Scotland",
@@ -248,13 +245,8 @@ defmodule DroneFeed.Locations do
     "Zürich, Switzerland"
   ]
 
-  @doc "All curated place labels."
   def all, do: @places
 
-  @doc """
-  Returns up to `limit` places whose label contains `query` (case-insensitive).
-  Empty queries return no suggestions so the list stays out of the way.
-  """
   def suggest(query, limit \\ 8)
 
   def suggest(query, limit) when is_binary(query) do

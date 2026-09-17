@@ -1,4 +1,3 @@
-/** Uniform fade-out on navigate, then fade-in on the next page. */
 
 let inFlight = false
 let revealToken = 0
@@ -15,7 +14,6 @@ function isNavKind(kind) {
 
 function queueReveal() {
   const token = ++revealToken
-  // Finish any in-progress exit, then fade the new page in.
   Promise.resolve(exitPromise).then(() => {
     queueMicrotask(() => {
       requestAnimationFrame(() => {
@@ -53,7 +51,6 @@ export const PageMotion = {
     }
 
     if (inFlight) {
-      // Remounted mid-nav: page is already hidden — skip exit, wait for reveal.
       this.holdPending()
     } else {
       this.enter()
@@ -148,7 +145,6 @@ export const PageMotion = {
   },
 
   prepare() {
-    // Already hidden or exiting — keep pending for the incoming page.
     if (this._phase === "pending" || this._phase === "exit") {
       this.holdPending()
       return
@@ -200,7 +196,6 @@ export const PageMotion = {
 
     if (this._phase === "enter" || this._phase === "shown") return
 
-    // If exit somehow still running on this node, finish it first.
     if (this._phase === "exit") {
       this.holdPending()
       this.finishExit()

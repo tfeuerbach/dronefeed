@@ -83,12 +83,10 @@ defmodule DroneFeed.Streaming do
     %{
       media_ip: ip,
       media_domain: domain,
-      # Primary: STANAG-style MPEG-TS with MISB KLV / data (after mux) — IP:port by default
       primary_pull: MediaURLs.rtsp_url(:vod, flight.id, host: ip),
       primary_pull_alt: alt_url(domain, &MediaURLs.rtsp_url(:vod, flight.id, host: &1)),
       primary_protocol: "rtsp",
       primary_note: "FMV + telemetry/geo (MISB KLV in-band)",
-      # Secondary: video-only for simple players
       rtmp_pull: MediaURLs.rtmp_url(:vod, flight.id, host: ip),
       rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:vod, flight.id, host: &1)),
       rtmp_note: "video/audio only (no KLV in FLV)",

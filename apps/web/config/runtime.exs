@@ -80,6 +80,7 @@ if config_env() == :prod do
     rtmp_port: String.to_integer(System.get_env("RTMP_PORT") || "1935"),
     rtsp_port: String.to_integer(System.get_env("RTSP_PORT") || "8554"),
     mediamtx_rtmp_url: System.get_env("MEDIAMTX_RTMP_URL") || "rtmp://mediamtx:1935",
+    mediamtx_rtsp_url: System.get_env("MEDIAMTX_RTSP_URL") || "rtsp://mediamtx:8554",
     ffmpeg_path: System.get_env("FFMPEG_PATH") || System.find_executable("ffmpeg") || "ffmpeg",
     retention_days: String.to_integer(System.get_env("RETENTION_DAYS") || "5"),
     show_dev_login_hint: false,

@@ -3,10 +3,6 @@ defmodule DroneFeedWeb.MediaAuthController do
 
   alias DroneFeed.Streaming.MediaAuth
 
-  @doc """
-  MediaMTX HTTP authentication hook.
-  200 = allow, 401 = challenge (empty RTSP probe), 403 = deny.
-  """
   def auth(conn, params) do
     payload = normalize(params)
 
@@ -23,8 +19,6 @@ defmodule DroneFeedWeb.MediaAuthController do
   end
 
   defp normalize(params) when is_map(params) do
-    # MediaMTX sends JSON body; Plug may already decode to string keys.
-    # Also accept nested under "_json" depending on content type.
     Map.merge(params, Map.get(params, "_json") || %{})
   end
 end

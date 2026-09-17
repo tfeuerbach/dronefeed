@@ -1,24 +1,19 @@
 defmodule DroneFeed.MediaURLs do
   @moduledoc """
-  Builds RTMP/RTSP ingest and pull URLs for flights and live sessions,
-  plus HTTP metadata URLs for consumer-drone SRT / enterprise KLV sidecars.
-
-  Public pull URLs default to `MEDIA_IP` (server public IP + port). When
-  `MEDIA_HOST` is set to a different hostname (e.g. dronefeed.example.com),
-  callers can also surface that as an alternate.
+  RTMP/RTSP publish and pull URLs, plus HTTP metadata URLs for SRT/KLV sidecars.
   """
 
   def stream_path(:vod, id), do: "vod/#{id}"
   def stream_path(:live, id), do: "live/#{id}"
 
-  @doc "Public IP (or hostname) used as the default pull endpoint host."
+  @doc "Public pull host (MEDIA_IP, else MEDIA_HOST)."
   def media_ip do
     Application.get_env(:drone_feed, :media_ip) ||
       Application.fetch_env!(:drone_feed, :media_host)
   end
 
   @doc """
-  Optional DNS hostname for pull URLs. Returns nil when unset or identical to `media_ip/0`.
+  Optional DNS hostname for pull URLs. Nil when unset or same as `media_ip/0`.
   """
   def media_domain do
     host = Application.get_env(:drone_feed, :media_host)
@@ -64,13 +59,16 @@ defmodule DroneFeed.MediaURLs do
   end
 
   def publish_target(:rtsp, kind, id, stream_key) do
-    host = System.get_env("MEDIAMTX_RTSP_HOST") || "127.0.0.1"
-    port = Application.fetch_env!(:drone_feed, :rtsp_port)
-    "rtsp://drone:#{URI.encode_www_form(stream_key)}@#{host}:#{port}/#{stream_path(kind, id)}"
+    base = Application.fetch_env!(:drone_feed, :mediamtx_rtsp_url)
+    "rtsp://drone:#{URI.encode_www_form(stream_key)}@#{rtsp_authority(base)}/#{stream_path(kind, id)}"
   end
 
-  # Back-compat for older call sites
+  # Back-compat
   def publish_target(kind, id, stream_key), do: publish_target(:rtmp, kind, id, stream_key)
+
+  defp rtsp_authority("rtsp://" <> rest), do: rest
+  defp rtsp_authority("rtsps://" <> rest), do: rest
+  defp rtsp_authority(other) when is_binary(other), do: other
 
   def metadata_url(flight_id, kind, stream_key, opts \\ []) when kind in ["srt", "klv"] do
     host = Keyword.get(opts, :host, web_host())

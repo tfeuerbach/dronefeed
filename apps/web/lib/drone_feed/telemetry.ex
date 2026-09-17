@@ -68,7 +68,6 @@ defmodule DroneFeed.Telemetry do
     if File.exists?(cache) and fresh?(cache, source) do
       case decode_cache(cache) do
         {:ok, []} ->
-          # Prior buggy extractors wrote empty arrays — force a re-run.
           File.rm(cache)
           extract_klv_json(source, cache)
 
@@ -291,7 +290,7 @@ defmodule DroneFeed.Telemetry do
   defp format_zoom(nil), do: nil
 
   defp format_zoom(value) do
-    # DJI often encodes "10000, delta:0" meaning 1.00× digital zoom.
+    # DJI: "10000, delta:0" → 1.00×
     num =
       value
       |> String.split(",", parts: 2)
@@ -323,7 +322,6 @@ defmodule DroneFeed.Telemetry do
   defp fmt_alt(v) when is_number(v), do: :erlang.float_to_binary(v * 1.0, decimals: 1) <> " m"
   defp fmt_alt(_), do: "— m"
 
-  # Keep enough of the sidecar for the black terminal without blowing LiveView payloads.
   @raw_preview_limit 120_000
 
   defp raw_sidecar_preview(text) when byte_size(text) <= @raw_preview_limit, do: text

@@ -29,6 +29,7 @@ services:
       RTMP_PORT: ${RTMP_PORT:-1935}
       RTSP_PORT: ${RTSP_PORT:-8554}
       MEDIAMTX_RTMP_URL: rtmp://mediamtx:1935
+      MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
       STORAGE_ROOT: /var/lib/drone-feed/storage
       RETENTION_DAYS: ${RETENTION_DAYS:-5}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}

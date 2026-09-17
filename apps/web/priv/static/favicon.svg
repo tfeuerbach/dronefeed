@@ -6,6 +6,5 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="12" fill="url(#df-signal)"/>
-  <!-- signal bar (matches .df-brand-mark::after inset) -->
-  <rect x="29" y="22" width="22" height="20" rx="2" fill="#f4fbf9"/>
+  <rect x="32" y="34" width="22" height="20" rx="4" fill="#f4fbf9"/>
 </svg>

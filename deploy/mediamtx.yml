@@ -1,5 +1,4 @@
-# MediaMTX — RTMP/RTSP ingest + pull. Auth delegated to Phoenix.
-# Override auth URL via MTX_AUTHHTTPADDRESS in docker-compose / systemd.
+# MediaMTX — RTMP/RTSP. Auth delegated to Phoenix via MTX_AUTHHTTPADDRESS.
 
 logLevel: info
 logDestinations: [stdout]
@@ -17,7 +16,6 @@ webrtc: no
 srt: no
 
 authMethod: http
-# Overridden in Docker to http://web:4000/api/mediamtx/auth
 authHTTPAddress: http://127.0.0.1:4000/api/mediamtx/auth
 authHTTPExclude:
   - action: api

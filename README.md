@@ -1,10 +1,14 @@
 <p align="center">
-  <img src="images/brand-mark.svg" width="72" height="72" alt="DroneFeed" />
+  <img src="images/brand-mark.svg" width="64" height="64" alt="DroneFeed" />
 </p>
 
-# DroneFeed Webserver
+<h1 align="center">DroneFeed</h1>
 
-Authenticated research webapp for uploading drone flights (FMV + SRT/KLV) and publishing them as pullable RTMP/RTSP feeds, plus live companion-app ingest with the same egress for research tools.
+<p align="center"><strong>Research flight feeds</strong></p>
+
+<p align="center">
+  Upload FMV + SRT/KLV, publish pullable RTMP/RTSP, and share live companion ingest with your team.
+</p>
 
 ## Stack
 
@@ -122,7 +126,7 @@ Caddy serves HTTPS on 443 with automatic certificate renewal. Point your domain'
 ## Layout
 
 - `apps/web` — Phoenix application
-- `images/` — brand mark (README + source); served from `apps/web/priv/static/images/`
+- `images/brand-mark.svg` — brand mark (README); also at `apps/web/priv/static/images/`
 - `deploy/` — MediaMTX config, Docker Compose, Dockerfile, `.env`
 - `scripts/mux_to_stanag.py` — SRT→KLV / STANAG MPEG-TS normalize
 - `scripts/extract_klv_track.py` — KLV → JSON for UI map/readouts

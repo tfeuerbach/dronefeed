@@ -44,9 +44,6 @@ defmodule DroneFeed.Accounts.User do
     if name == "", do: email, else: name
   end
 
-  @doc """
-  Changeset for a public account request (pending admin approval).
-  """
   def account_request_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [
@@ -78,15 +75,7 @@ defmodule DroneFeed.Accounts.User do
     |> put_change(:confirmed_at, nil)
   end
 
-  @doc """
-  A user changeset for registering or changing the email.
-
-  ## Options
-
-    * `:validate_unique` - Set to false if you don't want to validate the
-      uniqueness of the email, useful when displaying live validations.
-      Defaults to `true`.
-  """
+  @doc "Email changeset. Pass `validate_unique: false` for live validation."
   def email_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email])
@@ -120,18 +109,7 @@ defmodule DroneFeed.Accounts.User do
     end
   end
 
-  @doc """
-  A user changeset for changing the password.
-
-  ## Options
-
-    * `:hash_password` - Hashes the password so it can be stored securely
-      in the database and ensures the password field is cleared to prevent
-      leaks in the logs. If password hashing is not needed and clearing the
-      password field is not desired (like when using this changeset for
-      validations on a LiveView form), this option can be set to `false`.
-      Defaults to `true`.
-  """
+  @doc "Password changeset. Pass `hash_password: false` for live validation."
   def password_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:password])
@@ -163,10 +141,7 @@ defmodule DroneFeed.Accounts.User do
     end
   end
 
-  @doc """
-  Admin (or settings) changeset for profile fields, including email.
-  Unlike `email_changeset/3`, email may stay the same without error.
-  """
+  @doc "Profile fields for admin edits (email may be unchanged)."
   def profile_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email, :first_name, :last_name, :organization, :location])
@@ -216,20 +191,11 @@ defmodule DroneFeed.Accounts.User do
     change(user, status: "rejected", approved_at: nil, approved_by_id: nil)
   end
 
-  @doc """
-  Confirms the account by setting `confirmed_at` and marking status active.
-  """
   def confirm_changeset(user) do
     now = DateTime.utc_now(:second)
     change(user, confirmed_at: now, status: "active")
   end
 
-  @doc """
-  Verifies the password.
-
-  If there is no user or the user doesn't have a password, we call
-  `Bcrypt.no_user_verify/0` to avoid timing attacks.
-  """
   def valid_password?(%DroneFeed.Accounts.User{hashed_password: hashed_password}, password)
       when is_binary(hashed_password) and byte_size(password) > 0 do
     Bcrypt.verify_pass(password, hashed_password)

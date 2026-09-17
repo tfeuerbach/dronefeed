@@ -21,14 +21,12 @@ defmodule DroneFeedWeb.Router do
     plug :accepts, ["*/*"]
   end
 
-  # MediaMTX authentication webhook (no CSRF)
   scope "/api", DroneFeedWeb do
     pipe_through :api
 
     post "/mediamtx/auth", MediaAuthController, :auth
   end
 
-  # Paired telemetry/metadata pull for published recordings (stream-key auth)
   scope "/api", DroneFeedWeb do
     pipe_through :stream_pull
 

@@ -152,7 +152,6 @@ defmodule DroneFeed.Streaming.Publisher do
 
   defp start_ffmpeg_processes(_, _), do: {[], %{}}
 
-  # Primary research feed: video + KLV/data PIDs
   defp rtsp_full_args(%Flight{} = flight, ts_path) do
     target = MediaURLs.publish_target(:rtsp, :vod, flight.id, flight.stream_key)
 
@@ -177,7 +176,6 @@ defmodule DroneFeed.Streaming.Publisher do
     ]
   end
 
-  # Secondary: A/V only over RTMP for simple viewers
   defp rtmp_av_args(%Flight{} = flight, ts_path) do
     target = MediaURLs.publish_target(:rtmp, :vod, flight.id, flight.stream_key)
 
@@ -231,8 +229,6 @@ defmodule DroneFeed.Streaming.Publisher do
     end
   end
 
-  # Port line mode returns {:data, {:eol, line}} or {:data, {:noeol, chunk}}
-  # Normalize in handle_info — actually with :line we get tuples. Fix handle_info.
   defp port_line({:eol, line}), do: line |> to_string() |> String.trim()
   defp port_line({:noeol, line}), do: line |> to_string() |> String.trim()
   defp port_line(other), do: other |> to_string() |> String.trim()

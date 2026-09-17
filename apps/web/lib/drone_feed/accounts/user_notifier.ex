@@ -1,15 +1,11 @@
 defmodule DroneFeed.Accounts.UserNotifier do
-  @moduledoc """
-  Transactional email templates styled to match the DroneFeed mission-console UI
-  (slate surfaces, signal teal, Sora / IBM Plex Mono).
-  """
+  @moduledoc false
 
   import Swoosh.Email
 
   alias DroneFeed.Mailer
   alias DroneFeed.Accounts.User
 
-  # Design tokens (aligned with apps/web/assets/css/app.css)
   @ink "#0F1419"
   @slate "#1C2430"
   @slate_border "#2A3444"
@@ -106,7 +102,7 @@ defmodule DroneFeed.Accounts.UserNotifier do
                       <td valign="middle" width="40" style="padding-right:12px;">
                         <table role="presentation" cellspacing="0" cellpadding="0" width="32" height="32" style="width:32px;height:32px;border-collapse:collapse;">
                           <tr>
-                            <td width="32" height="32" bgcolor="#2a9d8f" style="width:32px;height:32px;background-color:#2a9d8f;background:linear-gradient(135deg,#2a9d8f,#3a4f6a);border-radius:6px;text-align:right;vertical-align:middle;padding:0 5px 0 0;">
+                            <td width="32" height="32" bgcolor="#2a9d8f" style="width:32px;height:32px;background-color:#2a9d8f;background:linear-gradient(135deg,#2a9d8f,#3a4f6a);border-radius:6px;text-align:right;vertical-align:bottom;padding:0 5px 5px 0;">
                               <span style="display:inline-block;width:11px;height:10px;background:#f4fbf9;border-radius:2px;font-size:0;line-height:0;">&nbsp;</span>
                             </td>
                           </tr>
@@ -180,9 +176,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     """
   end
 
-  @doc """
-  Notify all admins that a new account was requested.
-  """
   def deliver_admin_account_request(%User{} = requester, admin_email, review_url)
       when is_binary(admin_email) do
     name = User.display_name(requester)
@@ -221,9 +214,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     deliver(admin_email, "DroneFeed: account request from #{name}", text, html)
   end
 
-  @doc """
-  Send email verification link after admin approval.
-  """
   def deliver_verification_instructions(%User{} = user, url) do
     name = User.display_name(user)
 
@@ -255,9 +245,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     deliver(user.email, "Verify your DroneFeed account", text, html)
   end
 
-  @doc """
-  Notify the user that their account is approved, verified, and ready.
-  """
   def deliver_account_ready(%User{} = user, login_url) do
     name = User.display_name(user)
 
@@ -288,9 +275,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     deliver(user.email, "Your DroneFeed account is ready", text, html)
   end
 
-  @doc """
-  Notify the user that their account request was rejected.
-  """
   def deliver_account_rejected(%User{} = user, contact) do
     name = User.display_name(user)
 
@@ -317,9 +301,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     deliver(user.email, "DroneFeed account request update", text, html)
   end
 
-  @doc """
-  Deliver instructions to update a user email.
-  """
   def deliver_update_email_instructions(user, url) do
     text = """
     Hi #{user.email},
@@ -345,9 +326,6 @@ defmodule DroneFeed.Accounts.UserNotifier do
     deliver(user.email, "Update email instructions", text, html)
   end
 
-  @doc """
-  Deliver instructions to log in with a magic link (legacy / tests).
-  """
   def deliver_login_instructions(user, url) do
     case user do
       %User{confirmed_at: nil} -> deliver_verification_instructions(user, url)

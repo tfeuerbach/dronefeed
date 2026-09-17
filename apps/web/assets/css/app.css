@@ -1,20 +1,6 @@
-/* DroneFeed design system
-   -----------------------
-   Aesthetic: field-ops / mission console — cool slate surfaces, sharp geometry,
-   teal “signal” accents for live/publish state. Not purple, not cream-serif.
-
-   Type:
-     - Sora — UI / display
-     - IBM Plex Mono — stream URLs, keys, timestamps
-
-   Palette (signal / light):
-     ink      #0F1419
-     slate    #1C2430
-     fog      #E8EDF2
-     paper    #F4F7FA
-     signal   #0D9F8F  (primary / live)
-     amber    #D97706  (attention)
-     mute     #64748B
+/* DroneFeed
+   Type: Sora / IBM Plex Mono
+   Signal: #0D9F8F  Ink: #0F1419  Slate: #1C2430
 */
 
 @import "tailwindcss" source(none);
@@ -140,7 +126,6 @@ body {
   isolation: isolate;
 }
 
-/* Mission-console grid — site-wide atmosphere behind all pages */
 .df-shell::before {
   content: "";
   position: fixed;
@@ -217,7 +202,7 @@ body {
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.35rem;
-  background: linear-gradient(145deg, oklch(62% 0.11 180), oklch(45% 0.06 220));
+  background: linear-gradient(135deg, #2a9d8f, #3a4f6a);
   box-shadow: inset 0 0 0 1px oklch(100% 0 0 / 0.2);
   position: relative;
 }
@@ -225,9 +210,14 @@ body {
 .df-brand-mark::after {
   content: "";
   position: absolute;
-  inset: 35% 20% 35% 45%;
-  border-radius: 1px;
-  background: oklch(98% 0.01 180);
+  top: auto;
+  left: auto;
+  right: 15.625%;
+  bottom: 15.625%;
+  width: 34.375%;
+  height: 31.25%;
+  border-radius: 2px;
+  background: #f4fbf9;
 }
 
 .df-main {
@@ -465,7 +455,6 @@ body {
   }
 
   .df-gauge-grid {
-    /* Sidebar is too narrow for three mono values side-by-side. */
     grid-template-columns: 1fr;
   }
 }
@@ -766,7 +755,6 @@ body {
   font-family: var(--font-mono);
 }
 
-/* --- Motion --- */
 @keyframes df-fade-up {
   from {
     opacity: 0;
@@ -833,15 +821,6 @@ body {
   transform: none;
 }
 
-.df-reveal {
-  /* structural hook only — page-level motion handles enters */
-}
-
-.df-reveal-item {
-  /* No per-panel fade: fill-mode:both was starting sections at opacity 0 and
-     causing a visible flicker on first paint / LiveView connect. */
-}
-
 .df-panel {
   transition:
     border-color 180ms ease,
@@ -883,7 +862,6 @@ body {
   transform: translateY(1px);
 }
 
-/* --- Admin --- */
 .df-section-label {
   display: flex;
   align-items: center;
@@ -1087,12 +1065,6 @@ body {
   gap: 0.35rem;
   max-width: 40rem;
   padding-top: 0.25rem;
-}
-
-.df-user-row,
-.df-pending-card,
-.df-inbox-row {
-  /* legacy hooks kept as no-ops after admin grid rewrite */
 }
 
 @media (max-width: 900px) {
