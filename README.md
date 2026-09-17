@@ -7,14 +7,14 @@
 <p align="center"><strong>Research flight feeds</strong></p>
 
 <p align="center">
-  Upload FMV + SRT/KLV, publish pullable RTMP/RTSP, and share live companion or drone UDP ingest with your team.
+  Upload FMV + SRT/KLV, publish pullable SRT/RTSP/RTMP, and share live companion or drone UDP ingest with your team.
 </p>
 
 ## Stack
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
-- **MediaMTX** — RTMP `:1935` / RTSP `:8554` pull (+ companion push); MPEG-TS over UDP `:8900–8999` for drone ingest and recorded republish
-- **FFmpeg** — loops recorded STANAG TS into MediaMTX (MPEG-TS/UDP + RTMP A/V) when Public feed is on
+- **MediaMTX** — SRT `:8890` (MPEG-TS + KLV), RTSP `:8554`, RTMP `:1935`; UDP `:8900–8999` for drone ingest and recorded republish
+- **FFmpeg** — loops recorded STANAG TS into MediaMTX (`udp+mpegts`) when Public feed is on
 - **Caddy** — HTTPS (Let's Encrypt) in front of Phoenix
 - **Postgres** — users, flights, live sessions
 
@@ -66,8 +66,8 @@ flowchart TB
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
    - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
    - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
-3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. MediaMTX re-serves the same path for **RTSP / RTMP** pull (no second FFmpeg publish — a path can only have one source).
-4. Research tools **pull RTSP / RTMP** from MediaMTX with user `drone` and the flight stream key. (FFmpeg does not publish RTSP directly — the RTSP muxer cannot carry `bin_data` / KLV.)
+3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. MediaMTX re-serves **SRT / RTSP / RTMP** pull (one source per path). Prefer **SRT** for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
+4. Research tools authenticate as user `drone` with the flight stream key (`streamid=read:vod/<id>:drone:<key>` for SRT).
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 
 **Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — separate from the STANAG mux used for egress.

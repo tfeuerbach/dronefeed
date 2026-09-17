@@ -79,6 +79,7 @@ if config_env() == :prod do
     media_ip: media_ip,
     rtmp_port: String.to_integer(System.get_env("RTMP_PORT") || "1935"),
     rtsp_port: String.to_integer(System.get_env("RTSP_PORT") || "8554"),
+    srt_port: String.to_integer(System.get_env("SRT_PORT") || "8890"),
     mediamtx_rtmp_url: System.get_env("MEDIAMTX_RTMP_URL") || "rtmp://mediamtx:1935",
     mediamtx_rtsp_url: System.get_env("MEDIAMTX_RTSP_URL") || "rtsp://mediamtx:8554",
     mediamtx_api_url: System.get_env("MEDIAMTX_API_URL") || "http://mediamtx:9997",

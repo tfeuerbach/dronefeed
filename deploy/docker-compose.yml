@@ -28,6 +28,7 @@ services:
       MEDIA_IP: ${MEDIA_IP:-}
       RTMP_PORT: ${RTMP_PORT:-1935}
       RTSP_PORT: ${RTSP_PORT:-8554}
+      SRT_PORT: ${SRT_PORT:-8890}
       MEDIAMTX_RTMP_URL: rtmp://mediamtx:1935
       MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
       MEDIAMTX_API_URL: http://mediamtx:9997
@@ -85,6 +86,7 @@ services:
     ports:
       - "${RTMP_PORT:-1935}:1935"
       - "${RTSP_PORT:-8554}:8554"
+      - "${SRT_PORT:-8890}:8890/udp"
       - "${HLS_PORT:-8888}:8888"
       # MPEG-TS UDP ingest (one port per live session)
       - "${UDP_INGEST_PORT_MIN:-8900}-${UDP_INGEST_PORT_MAX:-8999}:${UDP_INGEST_PORT_MIN:-8900}-${UDP_INGEST_PORT_MAX:-8999}/udp"

@@ -53,6 +53,28 @@ defmodule DroneFeed.MediaURLs do
     end
   end
 
+  @doc """
+  SRT pull URL for MPEG-TS (H.264 + KLV). Auth via MediaMTX streamid.
+
+  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>`
+  """
+  def srt_mpegts_url(kind, id, opts \\ []) do
+    host = Keyword.get(opts, :host, media_ip())
+    port = Keyword.get(opts, :port, srt_port())
+    include_key = Keyword.get(opts, :include_key, false)
+    stream_key = Keyword.get(opts, :stream_key)
+    path = stream_path(kind, id)
+
+    streamid =
+      if include_key && stream_key do
+        "read:#{path}:drone:#{stream_key}"
+      else
+        "read:#{path}"
+      end
+
+    "srt://#{host}:#{port}?streamid=#{streamid}"
+  end
+
   def publish_target(:rtmp, kind, id, stream_key) do
     base = Application.fetch_env!(:drone_feed, :mediamtx_rtmp_url)
     "#{base}/#{stream_path(kind, id)}?user=drone&pass=#{URI.encode_www_form(stream_key)}"
@@ -96,6 +118,7 @@ defmodule DroneFeed.MediaURLs do
 
   defp rtmp_port, do: Application.fetch_env!(:drone_feed, :rtmp_port)
   defp rtsp_port, do: Application.fetch_env!(:drone_feed, :rtsp_port)
+  defp srt_port, do: Application.get_env(:drone_feed, :srt_port, 8890)
 
   defp web_host do
     Application.get_env(:drone_feed, :web_host) || media_domain() || media_ip()

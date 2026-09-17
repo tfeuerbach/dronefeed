@@ -1,4 +1,4 @@
-# MediaMTX — RTMP/RTSP. Auth delegated to Phoenix via MTX_AUTHHTTPADDRESS.
+# MediaMTX — RTMP/RTSP/SRT. Auth delegated to Phoenix via MTX_AUTHHTTPADDRESS.
 
 logLevel: info
 logDestinations: [stdout]
@@ -13,7 +13,11 @@ rtmpAddress: :1935
 hls: yes
 hlsAddress: :8888
 webrtc: no
-srt: no
+srt: yes
+srtAddress: :8890
+
+# 4K FMV needs a larger write queue; default drops frames under slow readers.
+writeQueueSize: 1024
 
 authMethod: http
 # Overridden in Compose by MTX_AUTHHTTPADDRESS=http://web:4000/api/mediamtx/auth

@@ -585,20 +585,27 @@ defmodule DroneFeedWeb.CoreComponents do
       </p>
       <%= if @kind == :flight do %>
         <p class="text-primary">
-          <span class="text-base-content/50">Primary RTSP (FMV+KLV)</span> {@urls.primary_pull}
+          <span class="text-base-content/50">Primary SRT MPEG-TS (H.264+KLV)</span> {@urls.primary_pull}
         </p>
         <p :if={@urls.primary_pull_alt} class="text-base-content/70">
           <span class="text-base-content/45">alt</span> {@urls.primary_pull_alt}
+        </p>
+        <p><span class="text-base-content/50">RTSP</span> {@urls.rtsp_pull}</p>
+        <p :if={@urls.rtsp_pull_alt} class="text-base-content/70">
+          <span class="text-base-content/45">alt</span> {@urls.rtsp_pull_alt}
+        </p>
+        <p class="text-xs text-base-content/45">
+          RTSP carries H.264 + KLV as RTP/SMPTE336M (not MPEG-TS-in-RTSP). Prefer SRT for STANAG tools.
         </p>
         <p><span class="text-base-content/50">RTMP video-only</span> {@urls.rtmp_pull}</p>
         <p :if={@urls.rtmp_pull_alt} class="text-base-content/70">
           <span class="text-base-content/45">alt</span> {@urls.rtmp_pull_alt}
         </p>
         <p :if={@urls[:srt_url]}>
-          <span class="text-base-content/50">source .srt</span> {@urls.srt_url}
+          <span class="text-base-content/50">source .srt sidecar</span> {@urls.srt_url}
         </p>
         <p :if={@urls[:klv_url]}>
-          <span class="text-base-content/50">source .klv</span> {@urls.klv_url}
+          <span class="text-base-content/50">source .klv sidecar</span> {@urls.klv_url}
         </p>
       <% else %>
         <%= if @urls[:udp_ingest] do %>
@@ -616,6 +623,10 @@ defmodule DroneFeedWeb.CoreComponents do
           <p><span class="text-base-content/50">RTMP ingest</span> {@urls.rtmp_ingest}</p>
           <p><span class="text-base-content/50">RTSP ingest</span> {@urls.rtsp_ingest}</p>
         <% end %>
+        <p><span class="text-base-content/50">SRT pull (MPEG-TS)</span> {@urls.srt_pull}</p>
+        <p :if={@urls.srt_pull_alt} class="text-base-content/70">
+          <span class="text-base-content/45">alt</span> {@urls.srt_pull_alt}
+        </p>
         <p><span class="text-base-content/50">RTMP pull</span> {@urls.rtmp_pull}</p>
         <p :if={@urls.rtmp_pull_alt} class="text-base-content/70">
           <span class="text-base-content/45">alt</span> {@urls.rtmp_pull_alt}
@@ -627,6 +638,11 @@ defmodule DroneFeedWeb.CoreComponents do
       <% end %>
       <p><span class="text-base-content/50">user</span> drone</p>
       <p><span class="text-base-content/50">key</span> {@urls.stream_key}</p>
+      <p class="text-xs text-base-content/45">
+        RTMP/RTSP: username <span class="font-mono">drone</span>, password = stream key
+        (or <span class="font-mono">rtmp://drone:&lt;key&gt;@host:1935/…</span>).
+        SRT: <span class="font-mono">streamid=read:vod/&lt;id&gt;:drone:&lt;key&gt;</span>.
+      </p>
     </div>
     """
   end

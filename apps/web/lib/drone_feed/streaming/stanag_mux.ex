@@ -3,7 +3,7 @@ defmodule DroneFeed.Streaming.StanagMux do
   Builds a normalized MPEG-TS with MISB KLV for publish.
 
   Consumer DJI (MP4 + .SRT) and enterprise TS+KLV both become the same
-  STANAG-style transport that research tools can pull from one RTSP endpoint.
+  STANAG-style transport that research tools can pull (prefer SRT MPEG-TS).
   """
 
   require Logger

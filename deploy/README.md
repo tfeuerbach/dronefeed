@@ -8,14 +8,23 @@
 | 443 | TCP/UDP | Caddy HTTPS (auto Let's Encrypt) | Researchers (browser) |
 | 1935 | TCP | MediaMTX RTMP | Research tools (pull) / companion ingest |
 | 8554 | TCP | MediaMTX RTSP | Research tools / companion |
+| 8890 | UDP | MediaMTX SRT | Research tools (MPEG-TS + KLV pull) |
 | 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Drone / encoder UDP feeds |
 | 8888 | TCP | MediaMTX HLS (optional) | Browser / ops |
 | 22 | TCP | SSH (or use SSM only) | Ops |
 
-RTMP/RTSP share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999) are used for:
+RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999) are used for:
 
 - Live **Drone UDP** ingest sessions (one port each)
 - Recorded **Public feed** republish (FFmpeg → MediaMTX over UDP, full TS + KLV)
+
+**Pull auth:** username `drone`, password = stream key.
+
+- RTMP: `rtmp://MEDIA_IP:1935/vod/<id>` (or `rtmp://drone:<key>@MEDIA_IP:1935/vod/<id>`)
+- RTSP: `rtsp://MEDIA_IP:8554/vod/<id>` (or embed `drone:<key>@`)
+- SRT (preferred for H.264+KLV): `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>`
+
+KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTSP exposes KLV as a separate RTP/SMPTE336M track (RFC 6597), not as MPEG-TS-in-RTSP. RTMP/FLV cannot carry KLV.
 
 Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates TLS and reverse-proxies.
 

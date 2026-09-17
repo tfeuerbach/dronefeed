@@ -30,7 +30,7 @@ WORKDIR /app
 RUN useradd --create-home app
 
 COPY --from=build --chown=app:app /app/_build/prod/rel/drone_feed ./
-COPY --chmod=755 scripts/mux_to_stanag.py scripts/extract_klv_track.py /app/scripts/
+COPY --chmod=755 scripts/mux_to_stanag.py scripts/stamp_klva_descriptor.py scripts/extract_klv_track.py /app/scripts/
 COPY --chmod=755 deploy/entrypoint.sh /app/entrypoint.sh
 # Start as root so entrypoint can chown the storage volume, then runuser → app.
 

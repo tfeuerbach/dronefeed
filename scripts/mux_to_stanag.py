@@ -162,17 +162,25 @@ def remux_video_only(video: Path, output: Path) -> None:
     )
 
 
+def stamp_klva(path: Path) -> None:
+    """Ensure private-data streams carry the KLVA registration descriptor."""
+    script = Path(__file__).with_name("stamp_klva_descriptor.py")
+    subprocess.check_call([sys.executable, str(script), str(path)])
+
+
 def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     ext = video.suffix.lower()
 
     if ext in TS_EXTS and probe_has_data_stream(video) and not srt and not klv:
         remux_ts(video, output)
+        stamp_klva(output)
         print(f"passthrough TS+data → {output}", file=sys.stderr)
         return
 
     if klv and klv.exists():
         mux_video_and_klv(video, klv, output)
+        stamp_klva(output)
         print(f"muxed video+klv → {output}", file=sys.stderr)
         return
 
@@ -181,11 +189,13 @@ def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None
             klv_tmp = Path(tmp) / "telemetry.klv"
             n = write_klv_from_srt(srt, klv_tmp)
             mux_video_and_klv(video, klv_tmp, output)
+            stamp_klva(output)
             print(f"muxed video+srt({n} cues)→klv → {output}", file=sys.stderr)
         return
 
     if ext in TS_EXTS:
         remux_ts(video, output)
+        stamp_klva(output)
         print(f"remux TS (no extra metadata) → {output}", file=sys.stderr)
         return
 
