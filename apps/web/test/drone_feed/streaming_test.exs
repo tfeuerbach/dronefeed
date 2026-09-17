@@ -12,9 +12,14 @@ defmodule DroneFeed.StreamingTest do
     assert session.ingest_mode == "push"
     assert is_nil(session.udp_port)
     urls = Streaming.urls(session)
-    assert urls.rtmp_ingest =~ "rtmp://"
+    assert urls.rtmp_ingest =~ "rtmp://drone:#{session.stream_key}@"
+    assert urls.rtmp_pull =~ "rtmp://drone:#{session.stream_key}@"
+    assert urls.rtsp_pull =~ "rtsp://drone:#{session.stream_key}@"
+    assert urls.srt_pull =~ ":drone:#{session.stream_key}"
+    refute Map.has_key?(urls, :stream_key)
     assert is_nil(urls.udp_ingest)
   end
+
 
   test "creates udp_mpegts session with allocated port", %{scope: scope} do
     assert {:ok, session} =
@@ -29,7 +34,7 @@ defmodule DroneFeed.StreamingTest do
     urls = Streaming.urls(session)
     assert urls.udp_ingest == "udp://127.0.0.1:#{session.udp_port}"
     assert is_nil(urls.rtmp_ingest)
-    assert urls.rtsp_pull =~ "rtsp://"
+    assert urls.rtsp_pull =~ "rtsp://drone:#{session.stream_key}@"
   end
 
   test "allocates distinct udp ports and frees on end", %{scope: scope} do

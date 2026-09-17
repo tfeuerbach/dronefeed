@@ -53,13 +53,13 @@ defmodule DroneFeedWeb.FlightLive.Published do
             </p>
             <% urls = Streaming.flight_urls(flight) %>
             <p class="mt-2 truncate font-mono text-[0.7rem] text-base-content/55">
-              {urls.rtmp_pull}
+              {urls.primary_pull}
             </p>
             <p
-              :if={urls.rtmp_pull_alt}
+              :if={urls.primary_pull_alt}
               class="truncate font-mono text-[0.65rem] text-base-content/40"
             >
-              alt {urls.rtmp_pull_alt}
+              alt {urls.primary_pull_alt}
             </p>
           </div>
         </.link>

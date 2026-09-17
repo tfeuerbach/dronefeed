@@ -111,29 +111,23 @@ defmodule DroneFeed.Streaming do
     ip = MediaURLs.media_ip()
     domain = MediaURLs.media_domain()
 
+    key_opts = [include_key: true, stream_key: session.stream_key]
+
     base = %{
       media_ip: ip,
       media_domain: domain,
       ingest_mode: session.ingest_mode,
-      rtmp_pull: MediaURLs.rtmp_url(:live, session.id, host: ip),
-      rtsp_pull: MediaURLs.rtsp_url(:live, session.id, host: ip),
-      srt_pull:
-        MediaURLs.srt_mpegts_url(:live, session.id,
-          host: ip,
-          include_key: true,
-          stream_key: session.stream_key
-        ),
-      rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:live, session.id, host: &1)),
-      rtsp_pull_alt: alt_url(domain, &MediaURLs.rtsp_url(:live, session.id, host: &1)),
+      rtmp_pull: MediaURLs.rtmp_url(:live, session.id, [host: ip] ++ key_opts),
+      rtsp_pull: MediaURLs.rtsp_url(:live, session.id, [host: ip] ++ key_opts),
+      srt_pull: MediaURLs.srt_mpegts_url(:live, session.id, [host: ip] ++ key_opts),
+      rtmp_pull_alt:
+        alt_url(domain, fn h -> MediaURLs.rtmp_url(:live, session.id, [host: h] ++ key_opts) end),
+      rtsp_pull_alt:
+        alt_url(domain, fn h -> MediaURLs.rtsp_url(:live, session.id, [host: h] ++ key_opts) end),
       srt_pull_alt:
         alt_url(domain, fn h ->
-          MediaURLs.srt_mpegts_url(:live, session.id,
-            host: h,
-            include_key: true,
-            stream_key: session.stream_key
-          )
-        end),
-      stream_key: session.stream_key
+          MediaURLs.srt_mpegts_url(:live, session.id, [host: h] ++ key_opts)
+        end)
     }
 
     case session.ingest_mode do
@@ -204,13 +198,36 @@ defmodule DroneFeed.Streaming do
             stream_key: flight.stream_key
           )
         end),
-      rtmp_pull: MediaURLs.rtmp_url(:vod, flight.id, host: ip),
-      rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:vod, flight.id, host: &1)),
+      rtmp_pull:
+        MediaURLs.rtmp_url(:vod, flight.id,
+          host: ip,
+          include_key: true,
+          stream_key: flight.stream_key
+        ),
+      rtmp_pull_alt:
+        alt_url(domain, fn h ->
+          MediaURLs.rtmp_url(:vod, flight.id,
+            host: h,
+            include_key: true,
+            stream_key: flight.stream_key
+          )
+        end),
       rtmp_note: "video/audio only (FLV cannot carry KLV)",
-      rtsp_pull: MediaURLs.rtsp_url(:vod, flight.id, host: ip),
-      rtsp_pull_alt: alt_url(domain, &MediaURLs.rtsp_url(:vod, flight.id, host: &1)),
-      rtsp_note: "H.264 + KLV as RTP/SMPTE336M (not MPEG-TS-in-RTSP)",
-      stream_key: flight.stream_key
+      rtsp_pull:
+        MediaURLs.rtsp_url(:vod, flight.id,
+          host: ip,
+          include_key: true,
+          stream_key: flight.stream_key
+        ),
+      rtsp_pull_alt:
+        alt_url(domain, fn h ->
+          MediaURLs.rtsp_url(:vod, flight.id,
+            host: h,
+            include_key: true,
+            stream_key: flight.stream_key
+          )
+        end),
+      rtsp_note: "H.264 + KLV as RTP/SMPTE336M (not MPEG-TS-in-RTSP)"
     }
     |> maybe_put_metadata(flight, :srt_path, "srt")
     |> maybe_put_metadata(flight, :klv_path, "klv")

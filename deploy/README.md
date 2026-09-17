@@ -8,25 +8,52 @@
 | 443 | TCP/UDP | Caddy HTTPS (auto Let's Encrypt) | Researchers (browser) |
 | 1935 | TCP | MediaMTX RTMP | Research tools (pull) / companion ingest |
 | 8554 | TCP | MediaMTX RTSP | Research tools / companion |
-| 8890 | UDP | MediaMTX SRT | Research tools (MPEG-TS + KLV pull) |
-| 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Drone / encoder UDP feeds |
+| 8890 | UDP | MediaMTX SRT | Research tools (MPEG-TS + KLV pull) + VOD republish ingest |
+| 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Live drone / encoder UDP feeds |
 | 8888 | TCP | MediaMTX HLS (optional) | Browser / ops |
 | 22 | TCP | SSH (or use SSM only) | Ops |
 
-RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999) are used for:
+RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 
-- Live **Drone UDP** ingest sessions (one port each)
-- Recorded **Public feed** republish (FFmpeg → MediaMTX over UDP, full TS + KLV)
+- **Recorded Public feed** republishes over **SRT** into MediaMTX (`publish:vod/<id>`), then re-serves SRT/RTSP/RTMP pull.
+- **Live Drone UDP** uses ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999), one port per session.
 
-**Pull auth:** username `drone`, password = stream key.
+**Pull access:** capability URLs only (token embedded). Copy from the UI; do not ask tools for a separate username/password.
 
-- RTMP: `rtmp://MEDIA_IP:1935/vod/<id>` (or `rtmp://drone:<key>@MEDIA_IP:1935/vod/<id>`)
-- RTSP: `rtsp://MEDIA_IP:8554/vod/<id>` (or embed `drone:<key>@`)
-- SRT (preferred for H.264+KLV): `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>`
+- RTMP: `rtmp://drone:<key>@MEDIA_IP:1935/vod/<id>`
+- RTSP: `rtsp://drone:<key>@MEDIA_IP:8554/vod/<id>`
+- SRT (preferred for H.264+KLV):  
+  `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000`  
+  (large `rcvbuf`/`sndbuf` matter for ~100 Mbps 4K.)
 
 KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTSP exposes KLV as a separate RTP/SMPTE336M track (RFC 6597), not as MPEG-TS-in-RTSP. RTMP/FLV cannot carry KLV.
 
 Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates TLS and reverse-proxies.
+
+## Minimum instance (architecture)
+
+4K FMV republish is often **~80–110 Mbps** with `-c copy`. MediaMTX demuxes/remuxes that bitrate for every SRT/RTSP reader. Undersized hosts peg CPU, starve write queues, and clients see **EOF after tens of seconds** even though auth and track ads succeed.
+
+| Workload | Minimum | Notes |
+|----------|---------|--------|
+| HD / ≤~20 Mbps, 1–2 readers | `c7i.xlarge` (4 vCPU, 8 GB) | Acceptable for light demos |
+| **4K ~100 Mbps, multi-reader SRT** (production) | **`c7i.2xlarge` (8 vCPU, 16 GB)** | Current prod target; keep headroom for concurrent pulls |
+| Heavier fan-out / several 4K feeds | `c7i.4xlarge`+ | Scale with Σ(bitrate × readers) |
+
+Also:
+
+- **Disk:** 80–200 GB gp3 for ~5 days of retention (see `RETENTION_DAYS`)
+- **Network:** Elastic IP (or stable DNS) for `PHX_HOST` / `MEDIA_HOST` / `MEDIA_IP`; ensure SG allows UDP **8890** and **8900–8999**
+- **Host UDP buffers** (once per boot / via sysctl.d):
+
+```bash
+sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456 \
+  net.core.rmem_default=16777216 net.core.wmem_default=16777216
+```
+
+`mediamtx.yml` sets `udpReadBufferSize: 16777216` and `writeQueueSize: 65536` (power of two) for high-bitrate SRT. Prefer remux (`-c copy`); do not re-encode 4K on the same box unless you have spare CPU.
+
+Prefer **NLB** (or SG on the instance) for 1935/8554/8890 — ALB is HTTP/HTTPS-oriented and is a poor fit for raw RTMP/RTSP/SRT.
 
 ## DNS
 
@@ -40,21 +67,16 @@ cd deploy
 cp .env.example .env
 # fill SECRET_KEY_BASE, PHX_HOST, ACME_EMAIL, POSTGRES_PASSWORD,
 # ADMIN_EMAIL / ADMIN_PASSWORD (≥8 chars, first boot), ADMIN_CONTACT,
-# and SMTP_HOST / SMTP_USER / SMTP_PASSWORD for dronefeed@tfeuerbach.dev
+# MEDIA_IP, MEDIA_HOST, and SMTP_* for outbound mail
 
+# raise host UDP buffers (see above), then:
 docker compose --env-file .env up -d --build
 ```
 
 - Migrations + optional admin bootstrap run via `deploy/entrypoint.sh`
 - Certs live in the `caddy_data` volume and renew automatically
 - After first successful login, clear `ADMIN_PASSWORD` from `.env` and recreate the web container if desired
-
-## Suggested instance
-
-- Start: `c6i.xlarge` / `c7i.xlarge` (4 vCPU), 50–200 GB gp3 for ~5 days of HD footage
-- Elastic IP or stable DNS for `PHX_HOST` / `MEDIA_HOST`
-- Prefer remux (`-c copy`); re-encode only when codecs are not RTMP-friendly
-- Prefer **NLB** (or SG on the instance) for 1935/8554 — ALB is HTTP/HTTPS-oriented and is a poor fit for raw RTMP/RTSP
+- Changing `ADMIN_EMAIL` later does **not** rename an existing user; update the `users.email` row (or bootstrap a new admin) as well
 
 ## Auth model
 
@@ -63,16 +85,16 @@ docker compose --env-file .env up -d --build
 - After email verification, the user can log in and upload
 - Bootstrap admin via `ADMIN_EMAIL` / `ADMIN_PASSWORD` (joined to the admin group)
 - Admins manage requests and roles at `/admin`
-- Outbound mail via AWS SES SMTP (`SMTP_*`, from `dronefeed@tfeuerbach.dev`)
+- Outbound mail via AWS SES SMTP (`SMTP_*`)
 - Credential restores: contact `ADMIN_CONTACT`
 - Settings: password change only
 
 ## Stream URL pattern
 
-- Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>` / `rtsp://MEDIA_IP:8554/vod/<flight_id>`
+- Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>` / `rtsp://MEDIA_IP:8554/vod/<flight_id>` / SRT as above
 - Alternate (DNS): same paths on `MEDIA_HOST` when it differs from `MEDIA_IP`
-- Auth: user `drone` / password = stream key
-- Live pull: `/live/<session_id>` on the same RTMP/RTSP hosts/ports
+- Auth: token inside the URL (UI “signed” / capability link)
+- Live pull: `/live/<session_id>` on the same RTMP/RTSP/SRT hosts/ports
 - Live **Drone UDP** ingest: `udp://MEDIA_IP:<allocated-port>` (MPEG-TS; port shown in the UI)
 - Companion live ingest: RTMP/RTSP publish URLs with stream key (shown in the UI)
 
@@ -85,4 +107,4 @@ For TLS on bare metal, run Caddy (or nginx) on the host pointing at Phoenix `:40
 
 1. Start Postgres (compose `db` only, or local on 5434)
 2. `cd apps/web && mix setup && mix phx.server`
-3. Run MediaMTX: `docker run --rm -p 1935:1935 -p 8554:8554 -v $PWD/deploy/mediamtx.yml:/mediamtx.yml bluenviron/mediamtx:1.15.6` with `MTX_AUTHHTTPADDRESS=http://host.docker.internal:4000/api/mediamtx/auth` (Linux: use host gateway IP)
+3. Run MediaMTX: `docker run --rm -p 1935:1935 -p 8554:8554 -p 8890:8890/udp -v $PWD/deploy/mediamtx.yml:/mediamtx.yml bluenviron/mediamtx:1.19.3` with `MTX_AUTHHTTPADDRESS=http://host.docker.internal:4000/api/mediamtx/auth` (Linux: use host gateway IP)

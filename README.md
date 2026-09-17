@@ -13,8 +13,8 @@
 ## Stack
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
-- **MediaMTX** — SRT `:8890` (MPEG-TS + KLV), RTSP `:8554`, RTMP `:1935`; UDP `:8900–8999` for drone ingest and recorded republish
-- **FFmpeg** — loops recorded STANAG TS into MediaMTX (`udp+mpegts`) when Public feed is on
+- **MediaMTX** — SRT `:8890` (MPEG-TS + KLV ingest/pull), RTSP `:8554`, RTMP `:1935`; UDP `:8900–8999` for live drone ingest
+- **FFmpeg** — loops recorded STANAG TS into MediaMTX over **SRT** when Public feed is on
 - **Caddy** — HTTPS (Let's Encrypt) in front of Phoenix
 - **Postgres** — users, flights, live sessions
 
@@ -44,6 +44,7 @@ flowchart TB
   end
 
   subgraph mtx["MediaMTX"]
+    SRT_P["SRT :8890"]
     UDP_IN["UDP MPEG-TS :8900–8999"]
     RTMP_P["RTMP :1935"]
     RTSP_P["RTSP :8554"]
@@ -52,10 +53,11 @@ flowchart TB
   UP --> WEB
   WEB --> DJI
   WEB --> ENT
-  TS -->|FFmpeg MPEG-TS/UDP + RTMP A/V| mtx
+  TS -->|FFmpeg loop MPEG-TS/SRT publish| SRT_P
   COMP -->|RTMP / RTSP push| mtx
   DRONE -->|MPEG-TS UDP| UDP_IN
-  PULL -->|pull RTSP / RTMP<br/>vod or live + stream key| RTSP_P
+  PULL -->|pull SRT / RTSP / RTMP<br/>vod or live + stream key| SRT_P
+  PULL --> RTSP_P
   PULL --> RTMP_P
   WEB -.->|HTTP auth webhook| mtx
 ```
@@ -66,8 +68,8 @@ flowchart TB
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
    - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
    - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
-3. Phoenix allocates a UDP port, configures the MediaMTX `vod/<id>` path as `udp+mpegts`, and FFmpeg loops the full TS (including KLV) into that listener. MediaMTX re-serves **SRT / RTSP / RTMP** pull (one source per path). Prefer **SRT** for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
-4. Research tools authenticate as user `drone` with the flight stream key (`streamid=read:vod/<id>:drone:<key>` for SRT).
+3. FFmpeg loops the full TS (including KLV) into MediaMTX over **SRT** (`publish:vod/<id>`). MediaMTX re-serves **SRT / RTSP / RTMP** pull (one source per path). Prefer **SRT** for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
+4. Research tools open the **capability URL** from the UI (token embedded in RTMP/RTSP userinfo or SRT `streamid`). No separate username/password.
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 
 **Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — separate from the STANAG mux used for egress.
@@ -76,10 +78,12 @@ flowchart TB
 
 | Mode | How it enters MediaMTX | How tools pull |
 |------|------------------------|----------------|
-| **Companion push** | App publishes RTMP or RTSP to `/live/<id>` with stream key | Same RTMP/RTSP URLs + stream key |
-| **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` (port from `8900–8999`) | Same RTMP/RTSP pull URLs + stream key |
+| **Companion push** | App publishes RTMP or RTSP to `/live/<id>` with stream key | Same RTMP/RTSP/SRT URLs + stream key |
+| **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` (port from `8900–8999`) | Same pull URLs + stream key |
 
 UDP ingest has no stream key on the wire — treat the allocated port as sensitive and tighten the security group when you can.
+
+**Sizing:** 4K ~100 Mbps multi-reader SRT needs about **8 vCPU** (e.g. `c7i.2xlarge`). See [deploy/README.md](deploy/README.md#minimum-instance-architecture).
 
 ## Quick start (dev)
 
@@ -115,12 +119,12 @@ Run MediaMTX locally (auth → Phoenix):
 docker run --rm --network host \
   -e MTX_AUTHHTTPADDRESS=http://127.0.0.1:4000/api/mediamtx/auth \
   -v "$PWD/deploy/mediamtx.yml:/mediamtx.yml" \
-  bluenviron/mediamtx:1.15.6
+  bluenviron/mediamtx:1.19.3
 ```
 
 ## Production
 
-See [deploy/README.md](deploy/README.md) for ports, EC2 sizing, DNS, and Let's Encrypt.
+See [deploy/README.md](deploy/README.md) for ports, **minimum EC2 sizing**, host UDP buffers, DNS, and Let's Encrypt.
 
 ```bash
 cd deploy

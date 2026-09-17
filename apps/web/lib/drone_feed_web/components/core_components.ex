@@ -566,9 +566,8 @@ defmodule DroneFeedWeb.CoreComponents do
   end
 
   @doc """
-  Renders public RTMP/RTSP pull connection info.
-
-  Defaults to IP:port URLs; shows domain alternates when `MEDIA_HOST` differs from `MEDIA_IP`.
+  Renders pull / ingest URLs. Access is capability-URL only (token embedded in the URL);
+  no separate username/password fields.
   """
   attr :urls, :map, required: true
   attr :kind, :atom, default: :flight, values: [:flight, :live]
@@ -616,7 +615,7 @@ defmodule DroneFeedWeb.CoreComponents do
             <span class="text-base-content/45">alt</span> {@urls.udp_ingest_alt}
           </p>
           <p class="text-xs text-base-content/45">
-            Point the drone / encoder at this address (MPEG-TS over UDP). No stream key on the wire —
+            Point the drone / encoder at this address (MPEG-TS over UDP). No token on the wire —
             treat the port as a secret and restrict source IPs in the security group when possible.
           </p>
         <% else %>
@@ -636,12 +635,9 @@ defmodule DroneFeedWeb.CoreComponents do
           <span class="text-base-content/45">alt</span> {@urls.rtsp_pull_alt}
         </p>
       <% end %>
-      <p><span class="text-base-content/50">user</span> drone</p>
-      <p><span class="text-base-content/50">key</span> {@urls.stream_key}</p>
       <p class="text-xs text-base-content/45">
-        RTMP/RTSP: username <span class="font-mono">drone</span>, password = stream key
-        (or <span class="font-mono">rtmp://drone:&lt;key&gt;@host:1935/…</span>).
-        SRT: <span class="font-mono">streamid=read:vod/&lt;id&gt;:drone:&lt;key&gt;</span>.
+        Paste the full URL into your tool — access is embedded (treat like a secret link).
+        No separate username or password.
       </p>
     </div>
     """

@@ -1,6 +1,8 @@
 defmodule DroneFeed.MediaURLs do
   @moduledoc """
-  RTMP/RTSP publish and pull URLs, plus HTTP metadata URLs for SRT/KLV sidecars.
+  Capability URLs for MediaMTX pull/publish and HTTP metadata sidecars.
+
+  Pull URLs embed the stream token (no separate username/password for clients).
   """
 
   def stream_path(:vod, id), do: "vod/#{id}"
