@@ -161,43 +161,59 @@ defmodule DroneFeed.Flights do
 
   defp persist_files(user_id, flight_id, %{video: video} = files) do
     dir = Path.join([storage_root(), "flights", user_id, flight_id])
-    File.mkdir_p!(dir)
-
     video_dest = Path.join(dir, "video" <> Path.extname(video.filename))
-    File.cp!(video.path, video_dest)
 
-    srt_path =
-      case Map.get(files, :srt) do
-        nil ->
-          nil
-
-        srt ->
-          dest = Path.join(dir, "metadata.srt")
-          File.cp!(srt.path, dest)
-          dest
-      end
-
-    klv_path =
-      case Map.get(files, :klv) do
-        nil ->
-          nil
-
-        klv ->
-          dest = Path.join(dir, "metadata" <> Path.extname(klv.filename))
-          File.cp!(klv.path, dest)
-          dest
-      end
-
-    {:ok,
-     %{
-       video_path: video_dest,
-       srt_path: srt_path,
-       klv_path: klv_path,
-       original_video_name: video.filename
-     }}
+    with :ok <- mkdir_p(dir),
+         :ok <- cp(video.path, video_dest),
+         {:ok, srt_path} <- copy_optional(Map.get(files, :srt), Path.join(dir, "metadata.srt")),
+         {:ok, klv_path} <-
+           copy_optional(
+             Map.get(files, :klv),
+             &Path.join(dir, "metadata" <> Path.extname(&1))
+           ) do
+      {:ok,
+       %{
+         video_path: video_dest,
+         srt_path: srt_path,
+         klv_path: klv_path,
+         original_video_name: video.filename
+       }}
+    end
   end
 
   defp persist_files(_user_id, _flight_id, _files), do: {:error, :video_required}
+
+  defp mkdir_p(dir) do
+    case File.mkdir_p(dir) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:storage, reason}}
+    end
+  end
+
+  defp cp(from, to) do
+    case File.cp(from, to) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:storage, reason}}
+    end
+  end
+
+  defp copy_optional(nil, _dest), do: {:ok, nil}
+
+  defp copy_optional(%{path: path, filename: filename}, dest_fun) when is_function(dest_fun, 1) do
+    dest = dest_fun.(filename)
+
+    case File.cp(path, dest) do
+      :ok -> {:ok, dest}
+      {:error, reason} -> {:error, {:storage, reason}}
+    end
+  end
+
+  defp copy_optional(%{path: path}, dest) when is_binary(dest) do
+    case File.cp(path, dest) do
+      :ok -> {:ok, dest}
+      {:error, reason} -> {:error, {:storage, reason}}
+    end
+  end
 
   defp cleanup_files(%Flight{video_path: path}) when is_binary(path) do
     dir = Path.dirname(path)
