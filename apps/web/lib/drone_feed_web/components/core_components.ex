@@ -324,14 +324,18 @@ defmodule DroneFeedWeb.CoreComponents do
     assigns = assign(assigns, places_json: places_json, list_id: list_id)
 
     ~H"""
-    <div
-      class="fieldset mb-2"
-      id={"#{@id}-wrap"}
-      phx-hook="LocationSuggest"
-      data-places={@places_json}
-    >
-      <label for={@id}>
-        <span :if={@label} class="label mb-1">{@label}</span>
+    <div class="fieldset mb-2">
+      <%!-- Ignore LV patches so validate/re-render does not remount the typeahead. --%>
+      <div
+        id={"#{@id}-wrap"}
+        phx-hook="LocationSuggest"
+        phx-update="ignore"
+        data-places={@places_json}
+        class="df-location-wrap"
+      >
+        <label for={@id}>
+          <span :if={@label} class="label mb-1">{@label}</span>
+        </label>
         <div class="df-location-field relative">
           <input
             type="text"
@@ -343,6 +347,7 @@ defmodule DroneFeedWeb.CoreComponents do
             aria-expanded="false"
             aria-controls={@list_id}
             data-location-input
+            phx-debounce="200"
             class={[
               @class || "w-full input",
               @errors != [] && (@error_class || "input-error")
@@ -358,7 +363,7 @@ defmodule DroneFeedWeb.CoreComponents do
           >
           </ul>
         </div>
-      </label>
+      </div>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """

@@ -6,15 +6,22 @@ function normalize(s) {
 
 function filterPlaces(places, query) {
   const q = normalize(query)
-  if (!q) return []
-  const out = []
+  if (q.length < 1) return []
+
+  const starts = []
+  const includes = []
+
   for (const place of places) {
-    if (normalize(place).includes(q)) {
-      out.push(place)
-      if (out.length >= MAX) break
+    const n = normalize(place)
+    if (n.startsWith(q) || n.split(/[,\s]+/).some((w) => w.startsWith(q))) {
+      starts.push(place)
+    } else if (n.includes(q)) {
+      includes.push(place)
     }
+    if (starts.length >= MAX) break
   }
-  return out
+
+  return starts.concat(includes).slice(0, MAX)
 }
 
 export const LocationSuggest = {
@@ -36,7 +43,7 @@ export const LocationSuggest = {
     this.onFocus = () => this.render(this.input.value)
     this.onBlur = () => {
       // Delay so option mousedown can fire first
-      window.setTimeout(() => this.close(), 120)
+      window.setTimeout(() => this.close(), 150)
     }
     this.onKeyDown = (e) => this.handleKey(e)
     this.onDocPointer = (e) => {
@@ -59,15 +66,18 @@ export const LocationSuggest = {
   },
 
   render(query) {
+    if (!this.list || !this.input) return
+
     const matches = filterPlaces(this.places, query)
     this.activeIndex = matches.length ? 0 : -1
-    this.list.innerHTML = ""
+    this.list.replaceChildren()
 
     if (!matches.length) {
       this.close()
       return
     }
 
+    const frag = document.createDocumentFragment()
     for (const [i, place] of matches.entries()) {
       const li = document.createElement("li")
       li.role = "option"
@@ -83,11 +93,13 @@ export const LocationSuggest = {
         e.preventDefault()
         this.choose(place)
       })
-      this.list.appendChild(li)
+      frag.appendChild(li)
     }
 
+    this.list.appendChild(frag)
     this.list.hidden = false
     this.open = true
+    this.el.classList.add("df-location-wrap--open")
     this.input.setAttribute("aria-expanded", "true")
     this.syncActiveDescendant()
   },
@@ -140,17 +152,20 @@ export const LocationSuggest = {
 
   choose(value) {
     this.input.value = value
-    this.input.dispatchEvent(new Event("input", {bubbles: true}))
+    // Notify LiveView without relying on a synthetic "input" that races remounts
+    this.input.dispatchEvent(new Event("change", {bubbles: true}))
     this.close()
     this.input.focus()
   },
 
   close() {
+    if (!this.list) return
     this.list.hidden = true
-    this.list.innerHTML = ""
+    this.list.replaceChildren()
     this.open = false
     this.activeIndex = -1
-    this.input.setAttribute("aria-expanded", "false")
-    this.input.removeAttribute("aria-activedescendant")
+    this.el.classList.remove("df-location-wrap--open")
+    this.input?.setAttribute("aria-expanded", "false")
+    this.input?.removeAttribute("aria-activedescendant")
   },
 }

@@ -11,6 +11,7 @@ defmodule DroneFeed.Streaming do
   alias DroneFeed.Repo
   alias DroneFeed.Streaming.LiveSession
   alias DroneFeed.Streaming.MediaMTX
+  alias DroneFeed.Streaming.UdpPorts
 
   def list_live_sessions(%Scope{user: user}) do
     LiveSession
@@ -43,24 +44,43 @@ defmodule DroneFeed.Streaming do
         case %LiveSession{} |> LiveSession.changeset(insert_attrs) |> Repo.insert() do
           {:ok, session} ->
             case provision_ingest(session) do
-              :ok -> session
-              {:error, reason} -> Repo.rollback(reason)
+              :ok ->
+                session
+
+              {:error, reason} ->
+                UdpPorts.release(session.udp_port)
+                Repo.rollback(reason)
             end
 
           {:error, changeset} ->
+            UdpPorts.release(Map.get(port_attrs, "udp_port"))
             Repo.rollback(changeset)
         end
       end)
+    else
+      {:error, :udp_ports_exhausted} = err ->
+        err
+
+      {:error, _} = err ->
+        err
     end
   end
 
   def end_live_session(%Scope{} = scope, id) do
     session = get_live_session!(scope, id)
     _ = teardown_ingest(session)
+    port = session.udp_port
 
-    session
-    |> LiveSession.changeset(%{"active" => false, "udp_port" => nil})
-    |> Repo.update()
+    case session
+         |> LiveSession.changeset(%{"active" => false, "udp_port" => nil})
+         |> Repo.update() do
+      {:ok, _ended} = ok ->
+        UdpPorts.release(port)
+        ok
+
+      other ->
+        other
+    end
   end
 
   def change_live_session(%LiveSession{} = session, attrs \\ %{}) do
@@ -175,30 +195,13 @@ defmodule DroneFeed.Streaming do
   end
 
   defp udp_attrs_for_mode("udp_mpegts") do
-    case allocate_udp_port() do
+    case UdpPorts.allocate() do
       {:ok, port} -> {:ok, %{"udp_port" => port}}
       {:error, _} = err -> err
     end
   end
 
   defp udp_attrs_for_mode(_), do: {:ok, %{"udp_port" => nil}}
-
-  defp allocate_udp_port do
-    min = Application.fetch_env!(:drone_feed, :udp_ingest_port_min)
-    max = Application.fetch_env!(:drone_feed, :udp_ingest_port_max)
-
-    used =
-      LiveSession
-      |> where([s], s.active == true and not is_nil(s.udp_port))
-      |> select([s], s.udp_port)
-      |> Repo.all()
-      |> MapSet.new()
-
-    case Enum.find(min..max, &(not MapSet.member?(used, &1))) do
-      nil -> {:error, :udp_ports_exhausted}
-      port -> {:ok, port}
-    end
-  end
 
   defp alt_url(nil, _fun), do: nil
   defp alt_url(domain, fun), do: fun.(domain)

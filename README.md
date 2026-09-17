@@ -72,6 +72,8 @@ flowchart TB
 
 **Live ingest** can be companion **RTMP/RTSP push**, or **MPEG-TS over UDP** (drone/encoder → allocated port). Pull always uses the same RTMP/RTSP URLs with stream-key auth.
 
+Recorded **Public feed** republishes via MPEG-TS/UDP into MediaMTX (keeps in-band KLV); RTMP is A/V-only. Research tools pull RTSP/RTMP as before.
+
 ## Quick start (dev)
 
 ```bash
@@ -134,3 +136,13 @@ Caddy serves HTTPS on 443 with automatic certificate renewal. Point your domain'
 - `scripts/download_sample_data.sh` — fetch gitignored demo flights
 - `scripts/ffmpeg_publish.sh` — manual republish helper
 - `storage/` — uploaded flights (dev; created at runtime)
+
+## License
+
+Copyright (C) 2026 Tim Feuerbach and contributors.
+
+**[GNU Affero General Public License v3.0](LICENSE)** (`AGPL-3.0-only`).
+
+You may use, study, and modify DroneFeed freely. Copyright and license notices must be kept (attribution). If you distribute a modified version, or run a modified version as a network service, you must offer the corresponding source under AGPL-3.0 as well.
+
+There is no separate “AGPL v2”; AGPL-3.0 is the current Affero GPL. AGPL does **not** ban commercial use or paid hosting—those limits would make the project source-available rather than open source. If you need a no-resale / no-subscription clause on top, say so and we can discuss a dual license or a non-OSI addendum.

@@ -1,17 +1,28 @@
 defmodule DroneFeed.Streaming.MediaMTX do
   @moduledoc """
-  Thin client for MediaMTX Control API (path add/delete for UDP MPEG-TS ingest).
+  Thin client for MediaMTX Control API (path add/delete for UDP MPEG-TS).
   """
 
   require Logger
 
   @doc """
-  Configures `live/<id>` (or other path) to listen for MPEG-TS over UDP.
+  Configures a path to listen for MPEG-TS over UDP (add, or replace if present).
   """
   def add_udp_mpegts_path(path, port) when is_binary(path) and is_integer(port) do
     if enabled?() do
       body = Jason.encode!(%{"source" => "udp+mpegts://0.0.0.0:#{port}"})
-      request(:post, "/v3/config/paths/add/#{encode_path(path)}", body)
+      encoded = encode_path(path)
+
+      case request(:post, "/v3/config/paths/add/#{encoded}", body) do
+        :ok ->
+          :ok
+
+        {:error, {:http, status, _}} when status in [400, 409] ->
+          request(:post, "/v3/config/paths/replace/#{encoded}", body)
+
+        other ->
+          other
+      end
     else
       :ok
     end

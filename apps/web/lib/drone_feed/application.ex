@@ -14,6 +14,7 @@ defmodule DroneFeed.Application do
         {DNSCluster, query: Application.get_env(:drone_feed, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: DroneFeed.PubSub},
         {Registry, keys: :unique, name: DroneFeed.Streaming.PublisherRegistry},
+        DroneFeed.Streaming.UdpPorts,
         DroneFeed.Streaming.FlightLog,
         DroneFeed.Streaming.PublisherSupervisor,
         DroneFeed.Retention,

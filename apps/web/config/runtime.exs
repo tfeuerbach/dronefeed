@@ -82,6 +82,7 @@ if config_env() == :prod do
     mediamtx_rtmp_url: System.get_env("MEDIAMTX_RTMP_URL") || "rtmp://mediamtx:1935",
     mediamtx_rtsp_url: System.get_env("MEDIAMTX_RTSP_URL") || "rtsp://mediamtx:8554",
     mediamtx_api_url: System.get_env("MEDIAMTX_API_URL") || "http://mediamtx:9997",
+    mediamtx_host: System.get_env("MEDIAMTX_HOST") || "mediamtx",
     mediamtx_api_enabled: System.get_env("MEDIAMTX_API_ENABLED", "true") not in ~w(false 0 no),
     udp_ingest_port_min: String.to_integer(System.get_env("UDP_INGEST_PORT_MIN") || "8900"),
     udp_ingest_port_max: String.to_integer(System.get_env("UDP_INGEST_PORT_MAX") || "8999"),

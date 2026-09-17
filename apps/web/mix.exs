@@ -11,7 +11,12 @@ defmodule DroneFeed.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      description: "Research flight ingest and pullable RTMP/RTSP feeds",
+      package: [
+        licenses: ["AGPL-3.0-only"],
+        links: %{"GitHub" => "https://github.com/tfeuerbach/dronefeed"}
+      ]
     ]
   end
 

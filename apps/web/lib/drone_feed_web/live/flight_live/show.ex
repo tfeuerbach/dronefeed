@@ -96,8 +96,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
 
             <section class="df-panel df-flight-map-panel">
               <div class="df-flight-side-head df-flight-side-head--pad">
-                <h2>OpenStreetMap</h2>
-                <p>Track synced to playback</p>
+                <h2>Map View</h2>
               </div>
               <div id={"flight-map-#{@flight.id}"} class="df-flight-map" data-map-root></div>
             </section>

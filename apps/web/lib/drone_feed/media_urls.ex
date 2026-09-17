@@ -74,6 +74,14 @@ defmodule DroneFeed.MediaURLs do
     "udp://#{host}:#{port}"
   end
 
+  @doc """
+  Internal publish target from the web container into MediaMTX (MPEG-TS / UDP).
+  """
+  def publish_udp_mpegts_url(port) when is_integer(port) do
+    host = Application.get_env(:drone_feed, :mediamtx_host, "mediamtx")
+    "udp://#{host}:#{port}?pkt_size=1316"
+  end
+
   defp rtsp_authority("rtsp://" <> rest), do: rest
   defp rtsp_authority("rtsps://" <> rest), do: rest
   defp rtsp_authority(other) when is_binary(other), do: other
