@@ -32,6 +32,7 @@ defmodule DroneFeed.Application do
            # Allow Repo pool to come up
            Process.sleep(500)
            DroneFeed.Flights.restore_publishers()
+           DroneFeed.Streaming.restore_udp_ingest()
          end}
       ]
     else

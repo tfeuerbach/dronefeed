@@ -13,7 +13,7 @@
 ## Stack
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
-- **MediaMTX** — RTMP `:1935` / RTSP `:8554` ingest + pull
+- **MediaMTX** — RTMP `:1935` / RTSP `:8554` ingest + pull; MPEG-TS over UDP `:8900–8999` for drone feeds
 - **FFmpeg** — loops recorded flights into MediaMTX when Publish is toggled on
 - **Postgres** — users, flights, live sessions
 
@@ -70,7 +70,7 @@ flowchart TB
 
 **Browser UI** parses `.srt` (or extracted KLV) for the map and live readouts — that path is separate from the STANAG mux used for egress.
 
-**Live ingest** skips the mux step: companion apps publish straight to MediaMTX; pull uses the same RTMP/RTSP ports and stream-key auth.
+**Live ingest** can be companion **RTMP/RTSP push**, or **MPEG-TS over UDP** (drone/encoder → allocated port). Pull always uses the same RTMP/RTSP URLs with stream-key auth.
 
 ## Quick start (dev)
 

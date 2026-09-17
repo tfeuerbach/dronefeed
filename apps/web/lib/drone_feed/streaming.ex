@@ -1,14 +1,16 @@
 defmodule DroneFeed.Streaming do
   @moduledoc """
-  Live ingest sessions for companion-app RTMP/RTSP publish.
+  Live ingest sessions: companion RTMP/RTSP push, or drone MPEG-TS over UDP.
   """
 
   import Ecto.Query
+  require Logger
 
   alias DroneFeed.Accounts.Scope
   alias DroneFeed.MediaURLs
   alias DroneFeed.Repo
   alias DroneFeed.Streaming.LiveSession
+  alias DroneFeed.Streaming.MediaMTX
 
   def list_live_sessions(%Scope{user: user}) do
     LiveSession
@@ -26,22 +28,38 @@ defmodule DroneFeed.Streaming do
   def get_live_session(id) when is_binary(id), do: Repo.get(LiveSession, id)
 
   def create_live_session(%Scope{user: user}, attrs) do
-    %LiveSession{}
-    |> LiveSession.changeset(
-      Map.merge(attrs, %{
-        "user_id" => user.id,
-        "stream_key" => generate_stream_key(),
-        "active" => true
-      })
-    )
-    |> Repo.insert()
+    mode = ingest_mode_from_attrs(attrs)
+
+    with {:ok, port_attrs} <- udp_attrs_for_mode(mode) do
+      Repo.transaction(fn ->
+        insert_attrs =
+          attrs
+          |> Map.put("user_id", user.id)
+          |> Map.put("stream_key", generate_stream_key())
+          |> Map.put("active", true)
+          |> Map.put("ingest_mode", mode)
+          |> Map.merge(port_attrs)
+
+        case %LiveSession{} |> LiveSession.changeset(insert_attrs) |> Repo.insert() do
+          {:ok, session} ->
+            case provision_ingest(session) do
+              :ok -> session
+              {:error, reason} -> Repo.rollback(reason)
+            end
+
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
+      end)
+    end
   end
 
   def end_live_session(%Scope{} = scope, id) do
     session = get_live_session!(scope, id)
+    _ = teardown_ingest(session)
 
     session
-    |> LiveSession.changeset(%{"active" => false})
+    |> LiveSession.changeset(%{"active" => false, "udp_port" => nil})
     |> Repo.update()
   end
 
@@ -49,31 +67,70 @@ defmodule DroneFeed.Streaming do
     LiveSession.changeset(session, attrs)
   end
 
+  @doc """
+  Re-apply MediaMTX UDP listeners for active `udp_mpegts` sessions after boot.
+  """
+  def restore_udp_ingest do
+    LiveSession
+    |> where([s], s.active == true and s.ingest_mode == "udp_mpegts" and not is_nil(s.udp_port))
+    |> Repo.all()
+    |> Enum.each(fn session ->
+      case provision_ingest(session) do
+        :ok ->
+          Logger.info("Restored UDP ingest for live/#{session.id} on :#{session.udp_port}")
+
+        {:error, reason} ->
+          Logger.error(
+            "Failed to restore UDP ingest for live/#{session.id}: #{inspect(reason)}"
+          )
+      end
+    end)
+  end
+
   def urls(%LiveSession{} = session) do
     ip = MediaURLs.media_ip()
     domain = MediaURLs.media_domain()
 
-    %{
+    base = %{
       media_ip: ip,
       media_domain: domain,
-      rtmp_ingest:
-        MediaURLs.rtmp_url(:live, session.id,
-          host: ip,
-          include_key: true,
-          stream_key: session.stream_key
-        ),
-      rtsp_ingest:
-        MediaURLs.rtsp_url(:live, session.id,
-          host: ip,
-          include_key: true,
-          stream_key: session.stream_key
-        ),
+      ingest_mode: session.ingest_mode,
       rtmp_pull: MediaURLs.rtmp_url(:live, session.id, host: ip),
       rtsp_pull: MediaURLs.rtsp_url(:live, session.id, host: ip),
       rtmp_pull_alt: alt_url(domain, &MediaURLs.rtmp_url(:live, session.id, host: &1)),
       rtsp_pull_alt: alt_url(domain, &MediaURLs.rtsp_url(:live, session.id, host: &1)),
       stream_key: session.stream_key
     }
+
+    case session.ingest_mode do
+      "udp_mpegts" ->
+        Map.merge(base, %{
+          udp_ingest: MediaURLs.udp_mpegts_url(session.udp_port, host: ip),
+          udp_ingest_alt: alt_url(domain, &MediaURLs.udp_mpegts_url(session.udp_port, host: &1)),
+          udp_port: session.udp_port,
+          rtmp_ingest: nil,
+          rtsp_ingest: nil
+        })
+
+      _ ->
+        Map.merge(base, %{
+          rtmp_ingest:
+            MediaURLs.rtmp_url(:live, session.id,
+              host: ip,
+              include_key: true,
+              stream_key: session.stream_key
+            ),
+          rtsp_ingest:
+            MediaURLs.rtsp_url(:live, session.id,
+              host: ip,
+              include_key: true,
+              stream_key: session.stream_key
+            ),
+          udp_ingest: nil,
+          udp_ingest_alt: nil,
+          udp_port: nil
+        })
+    end
   end
 
   def flight_urls(flight) do
@@ -96,6 +153,51 @@ defmodule DroneFeed.Streaming do
     }
     |> maybe_put_metadata(flight, :srt_path, "srt")
     |> maybe_put_metadata(flight, :klv_path, "klv")
+  end
+
+  defp provision_ingest(%LiveSession{ingest_mode: "udp_mpegts", id: id, udp_port: port})
+       when is_integer(port) do
+    MediaMTX.add_udp_mpegts_path("live/#{id}", port)
+  end
+
+  defp provision_ingest(%LiveSession{ingest_mode: "push"}), do: :ok
+  defp provision_ingest(_), do: {:error, :invalid_ingest}
+
+  defp teardown_ingest(%LiveSession{ingest_mode: "udp_mpegts", id: id}) do
+    MediaMTX.delete_path("live/#{id}")
+  end
+
+  defp teardown_ingest(_), do: :ok
+
+  defp ingest_mode_from_attrs(attrs) do
+    mode = Map.get(attrs, "ingest_mode") || Map.get(attrs, :ingest_mode) || "push"
+    if mode in LiveSession.ingest_modes(), do: mode, else: "push"
+  end
+
+  defp udp_attrs_for_mode("udp_mpegts") do
+    case allocate_udp_port() do
+      {:ok, port} -> {:ok, %{"udp_port" => port}}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp udp_attrs_for_mode(_), do: {:ok, %{"udp_port" => nil}}
+
+  defp allocate_udp_port do
+    min = Application.fetch_env!(:drone_feed, :udp_ingest_port_min)
+    max = Application.fetch_env!(:drone_feed, :udp_ingest_port_max)
+
+    used =
+      LiveSession
+      |> where([s], s.active == true and not is_nil(s.udp_port))
+      |> select([s], s.udp_port)
+      |> Repo.all()
+      |> MapSet.new()
+
+    case Enum.find(min..max, &(not MapSet.member?(used, &1))) do
+      nil -> {:error, :udp_ports_exhausted}
+      port -> {:ok, port}
+    end
   end
 
   defp alt_url(nil, _fun), do: nil

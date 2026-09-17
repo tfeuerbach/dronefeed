@@ -88,18 +88,26 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
           <div :if={@create_mode == :live} class="space-y-4">
             <p class="text-sm text-base-content/60">
-              Creates RTMP/RTSP ingest paths for a companion app. Research tools pull the same URLs.
+              Companion push (RTMP/RTSP) or drone MPEG-TS over UDP. Research tools pull the same
+              RTMP/RTSP URLs either way.
             </p>
             <.form
               for={@live_form}
               id="live-session-form"
               phx-submit="create_live"
               phx-change="validate_live"
-              class="flex flex-col gap-4 sm:flex-row sm:items-end"
+              class="space-y-4"
             >
-              <div class="flex-1">
-                <.input field={@live_form[:name]} type="text" label="Session name" required />
-              </div>
+              <.input field={@live_form[:name]} type="text" label="Session name" required />
+              <.input
+                field={@live_form[:ingest_mode]}
+                type="select"
+                label="Ingest"
+                options={[
+                  {"Companion push (RTMP / RTSP)", "push"},
+                  {"Drone UDP (MPEG-TS)", "udp_mpegts"}
+                ]}
+              />
               <.button phx-disable-with="Creating..." variant="primary">Start live session</.button>
             </.form>
           </div>
@@ -119,6 +127,9 @@ defmodule DroneFeedWeb.FlightLive.Index do
                 <div class="flex items-center gap-2">
                   <span class="df-live-dot" title="Active"></span>
                   <p class="font-medium">{session.name}</p>
+                  <span class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px] uppercase text-base-content/50">
+                    {if session.ingest_mode == "udp_mpegts", do: "udp", else: "push"}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -309,6 +320,13 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, live_form: to_form(changeset))}
+
+      {:error, :udp_ports_exhausted} ->
+        {:noreply,
+         put_flash(socket, :error, "No free UDP ingest ports — end an idle UDP session or widen the range")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not start live session: #{inspect(reason)}")}
     end
   end
 

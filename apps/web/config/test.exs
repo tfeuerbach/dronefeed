@@ -24,7 +24,10 @@ config :drone_feed,
   storage_root: Path.expand("../tmp/test_storage", __DIR__),
   ffmpeg_path: "echo",
   publisher_enabled: false,
-  restore_publishers_on_boot: false
+  restore_publishers_on_boot: false,
+  mediamtx_api_enabled: false,
+  udp_ingest_port_min: 8900,
+  udp_ingest_port_max: 8905
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

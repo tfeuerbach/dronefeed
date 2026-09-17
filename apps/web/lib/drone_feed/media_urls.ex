@@ -66,6 +66,14 @@ defmodule DroneFeed.MediaURLs do
   # Back-compat
   def publish_target(kind, id, stream_key), do: publish_target(:rtmp, kind, id, stream_key)
 
+  @doc """
+  Destination for drones / encoders sending MPEG-TS over UDP (unicast).
+  """
+  def udp_mpegts_url(port, opts \\ []) when is_integer(port) do
+    host = Keyword.get(opts, :host, media_ip())
+    "udp://#{host}:#{port}"
+  end
+
   defp rtsp_authority("rtsp://" <> rest), do: rest
   defp rtsp_authority("rtsps://" <> rest), do: rest
   defp rtsp_authority(other) when is_binary(other), do: other

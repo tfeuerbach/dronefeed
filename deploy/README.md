@@ -8,10 +8,11 @@
 | 443 | TCP/UDP | Caddy HTTPS (auto Let's Encrypt) | Researchers (browser) |
 | 1935 | TCP | MediaMTX RTMP | Research tools (pull) / companion ingest |
 | 8554 | TCP | MediaMTX RTSP | Research tools / companion |
+| 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Drone / encoder UDP feeds |
 | 8888 | TCP | MediaMTX HLS (optional) | Browser / ops |
 | 22 | TCP | SSH (or use SSM only) | Ops |
 
-Do **not** open a high-port range per flight. MediaMTX keeps fixed listeners; each feed is a path + stream key on those same ports (`/vod/<id>`, `/live/<id>`).
+RTMP/RTSP share fixed listeners (`/vod/<id>`, `/live/<id>`). **UDP MPEG-TS** live sessions each get one port from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999).
 
 Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates TLS and reverse-proxies.
 

@@ -596,8 +596,21 @@ defmodule DroneFeedWeb.CoreComponents do
           <span class="text-base-content/50">source .klv</span> {@urls.klv_url}
         </p>
       <% else %>
-        <p><span class="text-base-content/50">RTMP ingest</span> {@urls.rtmp_ingest}</p>
-        <p><span class="text-base-content/50">RTSP ingest</span> {@urls.rtsp_ingest}</p>
+        <%= if @urls[:udp_ingest] do %>
+          <p class="text-primary">
+            <span class="text-base-content/50">UDP MPEG-TS ingest</span> {@urls.udp_ingest}
+          </p>
+          <p :if={@urls[:udp_ingest_alt]} class="text-base-content/70">
+            <span class="text-base-content/45">alt</span> {@urls.udp_ingest_alt}
+          </p>
+          <p class="text-xs text-base-content/45">
+            Point the drone / encoder at this address (MPEG-TS over UDP). No stream key on the wire —
+            treat the port as a secret and restrict source IPs in the security group when possible.
+          </p>
+        <% else %>
+          <p><span class="text-base-content/50">RTMP ingest</span> {@urls.rtmp_ingest}</p>
+          <p><span class="text-base-content/50">RTSP ingest</span> {@urls.rtsp_ingest}</p>
+        <% end %>
         <p><span class="text-base-content/50">RTMP pull</span> {@urls.rtmp_pull}</p>
         <p :if={@urls.rtmp_pull_alt} class="text-base-content/70">
           <span class="text-base-content/45">alt</span> {@urls.rtmp_pull_alt}
