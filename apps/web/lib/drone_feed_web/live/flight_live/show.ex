@@ -55,7 +55,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
           data-points={Jason.encode!(@telemetry.points)}
         >
           <section class="df-flight-stage">
-            <div class="df-flight-player">
+            <div class="df-flight-player" id={"flight-player-#{@flight.id}"} phx-update="ignore">
               <video
                 id={"flight-video-#{@flight.id}"}
                 class="df-flight-video"
@@ -77,7 +77,11 @@ defmodule DroneFeedWeb.FlightLive.Show do
                   <span :if={@telemetry.all_count > 0}>· {@telemetry.all_count} samples</span>
                 </p>
               </div>
-              <div class="df-gauge-grid">
+              <div
+                id={"flight-gauges-#{@flight.id}"}
+                class="df-gauge-grid"
+                phx-update="ignore"
+              >
                 <div class="df-gauge">
                   <p class="df-gauge-label">Latitude</p>
                   <p class="df-gauge-value" data-gauge="lat">{fmt_coord(@readout.lat)}</p>
@@ -98,7 +102,13 @@ defmodule DroneFeedWeb.FlightLive.Show do
               <div class="df-flight-side-head df-flight-side-head--pad">
                 <h2>Map View</h2>
               </div>
-              <div id={"flight-map-#{@flight.id}"} class="df-flight-map" data-map-root></div>
+              <div
+                id={"flight-map-#{@flight.id}"}
+                class="df-flight-map"
+                data-map-root
+                phx-update="ignore"
+              >
+              </div>
             </section>
           </aside>
 
@@ -110,7 +120,11 @@ defmodule DroneFeedWeb.FlightLive.Show do
               </div>
             </div>
             <pre class="df-flight-raw-body">{@telemetry.raw_preview}</pre>
-            <div class="df-flight-raw-live">
+            <div
+              id={"flight-raw-live-#{@flight.id}"}
+              class="df-flight-raw-live"
+              phx-update="ignore"
+            >
               <p data-raw-line>Waiting for playback…</p>
             </div>
           </section>

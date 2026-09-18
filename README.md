@@ -7,7 +7,7 @@
 <p align="center"><strong>Research flight feeds</strong></p>
 
 <p align="center">
-  Upload FMV + SRT/KLV, publish pullable SRT/RTSP/RTMP, and share live companion or drone UDP ingest with your team.
+  Upload FMV + SRT/KLV, publish pullable SRT/RTSP/RTMP, and share live phone (DJI Custom RTMP), companion, or drone UDP ingest with your team.
 </p>
 
 ## Stack
@@ -24,6 +24,7 @@
 flowchart TB
   subgraph clients["Clients"]
     UP["Upload / browser UI"]
+    PHONE["Phone / DJI Custom RTMP"]
     COMP["Companion app"]
     DRONE["Drone / encoder"]
     PULL["Research tools"]
@@ -54,9 +55,10 @@ flowchart TB
   WEB --> DJI
   WEB --> ENT
   TS -->|FFmpeg loop MPEG-TS/SRT publish| SRT_P
+  PHONE -->|RTMP query-auth publish<br/>video/AAC only| RTMP_P
   COMP -->|RTMP / RTSP push| mtx
   DRONE -->|MPEG-TS UDP| UDP_IN
-  PULL -->|pull SRT / RTSP / RTMP<br/>vod or live + stream key| SRT_P
+  PULL -->|pull SRT / RTSP / RTMP<br/>vod or live capability URL| SRT_P
   PULL --> RTSP_P
   PULL --> RTMP_P
   WEB -.->|HTTP auth webhook| mtx
@@ -69,7 +71,7 @@ flowchart TB
    - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
    - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
 3. FFmpeg loops the full TS (including KLV) into MediaMTX over **SRT** (`publish:vod/<id>`). MediaMTX re-serves **SRT / RTSP / RTMP** pull (one source per path). Prefer **SRT** for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
-4. Research tools open the **capability URL** from the UI (token embedded in RTMP/RTSP userinfo or SRT `streamid`). No separate username/password.
+4. Research tools open the **capability URL** from the UI (token embedded — RTMP `?user=&pass=`, RTSP userinfo, or SRT `streamid`). No separate username/password.
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 
 **Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — separate from the STANAG mux used for egress.
@@ -78,8 +80,9 @@ flowchart TB
 
 | Mode | How it enters MediaMTX | How tools pull |
 |------|------------------------|----------------|
-| **Companion push** | App publishes RTMP or RTSP to `/live/<id>` with stream key | Same RTMP/RTSP/SRT URLs + stream key |
-| **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` (port from `8900–8999`) | Same pull URLs + stream key |
+| **Phone / DJI Custom RTMP** (Mavic, Mini, Air, …) | DJI Fly/GO → livestream → **Custom RTMP**; paste the session RTMP URL (or Server=`rtmp://MEDIA_IP:1935/live` + Stream key=`<id>?user=drone&pass=<token>`). **Video/AAC only** — no map/.SRT until you upload after landing. | Same RTSP/RTMP/SRT pull URLs |
+| **Companion RTSP** | App publishes RTSP to `/live/<id>` | Same pull URLs |
+| **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` | Same pull URLs (+ KLV if present) |
 
 UDP ingest has no stream key on the wire — treat the allocated port as sensitive and tighten the security group when you can.
 

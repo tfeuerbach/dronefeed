@@ -12,8 +12,13 @@ defmodule DroneFeed.StreamingTest do
     assert session.ingest_mode == "push"
     assert is_nil(session.udp_port)
     urls = Streaming.urls(session)
-    assert urls.rtmp_ingest =~ "rtmp://drone:#{session.stream_key}@"
-    assert urls.rtmp_pull =~ "rtmp://drone:#{session.stream_key}@"
+    assert urls.rtmp_ingest =~ "rtmp://"
+    assert urls.rtmp_ingest =~ "?user=drone&pass="
+    assert urls.rtmp_ingest =~ session.stream_key
+    assert urls.rtmp_dji_server =~ "rtmp://"
+    assert urls.rtmp_dji_server =~ "/live"
+    assert urls.rtmp_dji_key == "#{session.id}?user=drone&pass=#{URI.encode_www_form(session.stream_key)}"
+    assert urls.rtmp_pull =~ "?user=drone&pass=#{URI.encode_www_form(session.stream_key)}"
     assert urls.rtsp_pull =~ "rtsp://drone:#{session.stream_key}@"
     assert urls.srt_pull =~ ":drone:#{session.stream_key}"
     refute Map.has_key?(urls, :stream_key)

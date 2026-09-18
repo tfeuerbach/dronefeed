@@ -15,7 +15,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
         <:subtitle>
           Upload a recording or start a live ingest session. Turn on
           <span class="font-medium">Public feed</span>
-          on recordings to expose RTMP/RTSP pull URLs.
+          on recordings for SRT/RTSP with telemetry. Live phone RTMP is video-only.
         </:subtitle>
       </.header>
 
@@ -104,10 +104,15 @@ defmodule DroneFeedWeb.FlightLive.Index do
                 type="select"
                 label="Ingest"
                 options={[
-                  {"Companion push (RTMP / RTSP)", "push"},
-                  {"Drone UDP (MPEG-TS)", "udp_mpegts"}
+                  {"Phone / DJI Custom RTMP (video only)", "push"},
+                  {"Encoder UDP (MPEG-TS + optional KLV)", "udp_mpegts"}
                 ]}
               />
+              <p class="text-xs text-base-content/55">
+                Mavic / Mini / Air: choose phone RTMP — open DJI Fly → livestream → Custom RTMP and
+                paste the session URL. Needs LTE/5G or Starlink on the phone. No telemetry on this
+                path; upload MP4 + .SRT after landing for map/KLV.
+              </p>
               <.button phx-disable-with="Creating..." variant="primary">Start live session</.button>
             </.form>
           </div>

@@ -15,8 +15,7 @@ defmodule DroneFeed.Streaming.MediaAuth do
   def authorize(payload) when is_map(payload) do
     action = get(payload, "action")
     path = get(payload, "path") || ""
-    password = get(payload, "password") || get(payload, "token") || ""
-    user = get(payload, "user") || ""
+    {user, password} = credentials(payload)
 
     result =
       if user == "" and password == "" and action in ["publish", "read", "playback"] do
@@ -40,7 +39,7 @@ defmodule DroneFeed.Streaming.MediaAuth do
   defp do_authorize(_action, _path, _password), do: {:error, :forbidden}
 
   defp authorize_vod(action, id, password) do
-    case Flights.get_flight(id) do
+    case fetch_flight(id) do
       %{publishing: true, stream_key: ^password} when action in ["publish", "read", "playback"] ->
         :ok
 
@@ -56,7 +55,7 @@ defmodule DroneFeed.Streaming.MediaAuth do
   end
 
   defp authorize_live(action, id, password) do
-    case Streaming.get_live_session(id) do
+    case fetch_live_session(id) do
       %{active: true, stream_key: ^password} when action in ["publish", "read", "playback"] ->
         :ok
 
@@ -70,6 +69,45 @@ defmodule DroneFeed.Streaming.MediaAuth do
         {:error, :forbidden}
     end
   end
+
+  # Invalid IDs must not raise Ecto cast errors (Phoenix maps those to HTTP 400,
+  # which MediaMTX surfaces as a confusing RTMP "Bad Request").
+  defp fetch_flight(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, _} -> Flights.get_flight(id)
+      :error -> nil
+    end
+  end
+
+  defp fetch_live_session(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, _} -> Streaming.get_live_session(id)
+      :error -> nil
+    end
+  end
+
+  # MediaMTX puts RTMP `?user=&pass=` into user/password; also accept query
+  # fallback so phone Custom RTMP stays authable if a client only fills `query`.
+  defp credentials(payload) do
+    user = stringify(get(payload, "user"))
+    password = stringify(get(payload, "password") || get(payload, "token"))
+
+    if user != "" or password != "" do
+      {user, password}
+    else
+      query = stringify(get(payload, "query"))
+      params = URI.decode_query(query)
+
+      {
+        stringify(Map.get(params, "user")),
+        stringify(Map.get(params, "pass") || Map.get(params, "password") || Map.get(params, "token"))
+      }
+    end
+  end
+
+  defp stringify(nil), do: ""
+  defp stringify(value) when is_binary(value), do: value
+  defp stringify(value), do: to_string(value)
 
   defp log_auth(payload, result) do
     path = get(payload, "path") || ""

@@ -83,6 +83,31 @@ defmodule DroneFeed.Streaming.MediaAuthTest do
              })
   end
 
+  test "rejects non-uuid path ids as forbidden (not cast error)", %{scope: scope} do
+    {:ok, _session} = Streaming.create_live_session(scope, %{"name" => "Pad 2"})
+
+    assert {:error, :forbidden} =
+             MediaAuth.authorize(%{
+               "action" => "publish",
+               "path" => "live/not-a-uuid",
+               "user" => "drone",
+               "password" => "anything"
+             })
+  end
+
+  test "accepts RTMP credentials from query when user/password empty", %{scope: scope} do
+    {:ok, session} = Streaming.create_live_session(scope, %{"name" => "Pad query"})
+
+    assert :ok =
+             MediaAuth.authorize(%{
+               "action" => "publish",
+               "path" => "live/#{session.id}",
+               "user" => "",
+               "password" => "",
+               "query" => "user=drone&pass=#{URI.encode_www_form(session.stream_key)}"
+             })
+  end
+
   defp tmp_file(name, contents) do
     path = Path.join(System.tmp_dir!(), "#{System.unique_integer([:positive])}-#{name}")
     File.write!(path, contents)

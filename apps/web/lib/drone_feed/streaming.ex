@@ -142,12 +142,16 @@ defmodule DroneFeed.Streaming do
 
       _ ->
         Map.merge(base, %{
-          rtmp_ingest:
-            MediaURLs.rtmp_url(:live, session.id,
-              host: ip,
-              include_key: true,
-              stream_key: session.stream_key
-            ),
+          # Phone / DJI Custom RTMP — query-auth URL (single paste field).
+          rtmp_ingest: MediaURLs.rtmp_url_query(:live, session.id, session.stream_key, host: ip),
+          rtmp_ingest_alt:
+            alt_url(domain, fn h ->
+              MediaURLs.rtmp_url_query(:live, session.id, session.stream_key, host: h)
+            end),
+          # Two-field DJI dialog (Server URL + Stream Key).
+          rtmp_dji_server: MediaURLs.rtmp_dji_server(host: ip),
+          rtmp_dji_server_alt: alt_url(domain, &MediaURLs.rtmp_dji_server(host: &1)),
+          rtmp_dji_key: MediaURLs.rtmp_dji_stream_key(session.id, session.stream_key),
           rtsp_ingest:
             MediaURLs.rtsp_url(:live, session.id,
               host: ip,

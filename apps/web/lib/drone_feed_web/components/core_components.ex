@@ -619,25 +619,64 @@ defmodule DroneFeedWeb.CoreComponents do
             treat the port as a secret and restrict source IPs in the security group when possible.
           </p>
         <% else %>
-          <p><span class="text-base-content/50">RTMP ingest</span> {@urls.rtmp_ingest}</p>
-          <p><span class="text-base-content/50">RTSP ingest</span> {@urls.rtsp_ingest}</p>
+          <div class="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
+            <p class="text-sm font-medium text-primary">Phone → Custom RTMP (DJI Fly / GO)</p>
+            <ol class="list-decimal space-y-1 pl-4 text-xs text-base-content/70">
+              <li>On the remote, open the camera view → share / livestream → <strong>Custom RTMP</strong>.</li>
+              <li>Paste the URL below (or use Server + Stream key if the app has two fields).</li>
+              <li>Start livestream. Phone needs LTE/5G or Starlink — video only, no .SRT/KLV.</li>
+            </ol>
+            <p class="break-all font-mono text-xs text-base-content/90">
+              <span class="text-base-content/50">RTMP URL</span> {@urls.rtmp_ingest}
+            </p>
+            <p :if={@urls[:rtmp_ingest_alt]} class="break-all font-mono text-[0.7rem] text-base-content/60">
+              <span class="text-base-content/45">alt</span> {@urls.rtmp_ingest_alt}
+            </p>
+            <div class="space-y-1 border-t border-base-content/10 pt-2">
+              <p class="text-[0.7rem] uppercase tracking-wide text-base-content/45">
+                Two-field apps (Server + Stream key)
+              </p>
+              <p class="break-all font-mono text-xs">
+                <span class="text-base-content/50">Server</span> {@urls.rtmp_dji_server}
+              </p>
+              <p
+                :if={@urls[:rtmp_dji_server_alt]}
+                class="break-all font-mono text-[0.7rem] text-base-content/60"
+              >
+                <span class="text-base-content/45">alt</span> {@urls.rtmp_dji_server_alt}
+              </p>
+              <p class="break-all font-mono text-xs">
+                <span class="text-base-content/50">Stream key</span> {@urls.rtmp_dji_key}
+              </p>
+            </div>
+            <p class="text-xs text-base-content/50">
+              Advanced: RTSP publish <span class="font-mono">{@urls.rtsp_ingest}</span>
+            </p>
+          </div>
         <% end %>
-        <p><span class="text-base-content/50">SRT pull (MPEG-TS)</span> {@urls.srt_pull}</p>
-        <p :if={@urls.srt_pull_alt} class="text-base-content/70">
-          <span class="text-base-content/45">alt</span> {@urls.srt_pull_alt}
+        <p class="pt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">
+          Researchers pull (video)
+        </p>
+        <p>
+          <span class="text-base-content/50">RTSP pull</span> {@urls.rtsp_pull}
+        </p>
+        <p :if={@urls.rtsp_pull_alt} class="text-base-content/70">
+          <span class="text-base-content/45">alt</span> {@urls.rtsp_pull_alt}
         </p>
         <p><span class="text-base-content/50">RTMP pull</span> {@urls.rtmp_pull}</p>
         <p :if={@urls.rtmp_pull_alt} class="text-base-content/70">
           <span class="text-base-content/45">alt</span> {@urls.rtmp_pull_alt}
         </p>
-        <p><span class="text-base-content/50">RTSP pull</span> {@urls.rtsp_pull}</p>
-        <p :if={@urls.rtsp_pull_alt} class="text-base-content/70">
-          <span class="text-base-content/45">alt</span> {@urls.rtsp_pull_alt}
+        <p><span class="text-base-content/50">SRT pull</span> {@urls.srt_pull}</p>
+        <p :if={@urls.srt_pull_alt} class="text-base-content/70">
+          <span class="text-base-content/45">alt</span> {@urls.srt_pull_alt}
+        </p>
+        <p class="text-xs text-base-content/45">
+          Live phone push is H.264/AAC only — no map telemetry until you upload MP4 + .SRT after landing.
         </p>
       <% end %>
       <p class="text-xs text-base-content/45">
         Paste the full URL into your tool — access is embedded (treat like a secret link).
-        No separate username or password.
       </p>
     </div>
     """

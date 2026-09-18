@@ -33,11 +33,43 @@ defmodule DroneFeed.MediaURLs do
     include_key = Keyword.get(opts, :include_key, false)
     stream_key = Keyword.get(opts, :stream_key)
 
-    if include_key && stream_key do
-      "rtmp://drone:#{stream_key}@#{host}:#{port}/#{stream_path(kind, id)}"
+    # MediaMTX RTMP auth is query-only (`?user=&pass=`). URL userinfo is ignored.
+    if include_key && is_binary(stream_key) and stream_key != "" do
+      rtmp_url_query(kind, id, stream_key, host: host, port: port)
     else
       "rtmp://#{host}:#{port}/#{stream_path(kind, id)}"
     end
+  end
+
+  @doc """
+  RTMP publish/pull URL with token in the query string.
+
+  Required for MediaMTX RTMP auth and for DJI Fly / GO **Custom RTMP**.
+  Video/audio only (no telemetry / KLV).
+  """
+  def rtmp_url_query(kind, id, stream_key, opts \\ [])
+      when kind in [:vod, :live] and is_binary(stream_key) do
+    host = Keyword.get(opts, :host, media_ip())
+    port = Keyword.get(opts, :port, rtmp_port())
+
+    "rtmp://#{host}:#{port}/#{stream_path(kind, id)}?user=drone&pass=#{URI.encode_www_form(stream_key)}"
+  end
+
+  @doc """
+  DJI-style two-field Custom Livestream: server URL + stream key.
+
+  The app joins them as `server/key`, producing
+  `rtmp://host:1935/live/<id>?user=drone&pass=<token>`.
+  """
+  def rtmp_dji_server(opts \\ []) do
+    host = Keyword.get(opts, :host, media_ip())
+    port = Keyword.get(opts, :port, rtmp_port())
+    "rtmp://#{host}:#{port}/live"
+  end
+
+  def rtmp_dji_stream_key(id, stream_key)
+      when is_binary(id) and is_binary(stream_key) do
+    "#{id}?user=drone&pass=#{URI.encode_www_form(stream_key)}"
   end
 
   def rtsp_url(kind, id, opts \\ []) do

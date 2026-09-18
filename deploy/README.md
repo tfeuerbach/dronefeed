@@ -6,7 +6,7 @@
 |------|-------|---------|-----|
 | 80 | TCP | Caddy (ACME HTTP-01 + redirect) | Let's Encrypt + browsers |
 | 443 | TCP/UDP | Caddy HTTPS (auto Let's Encrypt) | Researchers (browser) |
-| 1935 | TCP | MediaMTX RTMP | Research tools (pull) / companion ingest |
+| 1935 | TCP | MediaMTX RTMP | Research tools (pull) / phone DJI Custom RTMP / companion ingest |
 | 8554 | TCP | MediaMTX RTSP | Research tools / companion |
 | 8890 | UDP | MediaMTX SRT | Research tools (MPEG-TS + KLV pull) + VOD republish ingest |
 | 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Live drone / encoder UDP feeds |
@@ -20,11 +20,13 @@ RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 
 **Pull access:** capability URLs only (token embedded). Copy from the UI; do not ask tools for a separate username/password.
 
-- RTMP: `rtmp://drone:<key>@MEDIA_IP:1935/vod/<id>`
+- RTMP (query auth — required by MediaMTX): `rtmp://MEDIA_IP:1935/vod/<id>?user=drone&pass=<key>`
 - RTSP: `rtsp://drone:<key>@MEDIA_IP:8554/vod/<id>`
 - SRT (preferred for H.264+KLV):  
   `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000`  
   (large `rcvbuf`/`sndbuf` matter for ~100 Mbps 4K.)
+
+**Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only).
 
 KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTSP exposes KLV as a separate RTP/SMPTE336M track (RFC 6597), not as MPEG-TS-in-RTSP. RTMP/FLV cannot carry KLV.
 
@@ -91,12 +93,13 @@ docker compose --env-file .env up -d --build
 
 ## Stream URL pattern
 
-- Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>` / `rtsp://MEDIA_IP:8554/vod/<flight_id>` / SRT as above
+- Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>?user=drone&pass=<key>` / `rtsp://drone:<key>@MEDIA_IP:8554/vod/<flight_id>` / SRT as above
 - Alternate (DNS): same paths on `MEDIA_HOST` when it differs from `MEDIA_IP`
-- Auth: token inside the URL (UI “signed” / capability link)
+- Auth: token inside the URL (UI capability link) — RTMP always uses `?user=&pass=` (MediaMTX ignores URL userinfo for RTMP)
 - Live pull: `/live/<session_id>` on the same RTMP/RTSP/SRT hosts/ports
+- Live **phone / Mavic**: Custom RTMP publish URL from the UI (`rtmp://MEDIA_IP:1935/live/<id>?user=drone&pass=<key>`, or Server + Stream key fields). Video/AAC only.
 - Live **Drone UDP** ingest: `udp://MEDIA_IP:<allocated-port>` (MPEG-TS; port shown in the UI)
-- Companion live ingest: RTMP/RTSP publish URLs with stream key (shown in the UI)
+- Companion live ingest: RTMP (query) / RTSP publish URLs with stream key (shown in the UI)
 
 ## Systemd (non-Compose)
 

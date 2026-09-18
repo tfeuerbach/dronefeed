@@ -75,18 +75,16 @@ export const FlightDeck = {
       this.video.addEventListener("seeked", this.onTime)
     }
 
-    if (this.points.length) {
-      loadLeaflet()
-        .then((L) => this.initMap(L))
-        .catch(() => {})
-      this.applyPoint(this.points[0])
-    }
+    this.ensureMap()
+    if (this.points.length) this.applyPoint(this.points[0])
   },
 
   updated() {
     this.points = parsePoints(this.el)
+    this.video = this.el.querySelector("video") || this.video
+    this.ensureMap()
     if (this.map) {
-      requestAnimationFrame(() => this.map.invalidateSize())
+      requestAnimationFrame(() => this.map.invalidateSize({ animate: false }))
     }
   },
 
@@ -95,6 +93,34 @@ export const FlightDeck = {
       this.video.removeEventListener("timeupdate", this.onTime)
       this.video.removeEventListener("seeked", this.onTime)
     }
+    this.teardownMap()
+  },
+
+  ensureMap() {
+    if (!this.points.length) return
+
+    const root = this.el.querySelector("[data-map-root]")
+    if (!root) return
+
+    // LiveView morph can empty the map node; rebuild if Leaflet panes vanished.
+    if (this.map && !root.querySelector(".leaflet-pane")) {
+      this.map = null
+      this.marker = null
+      this.trail = null
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect()
+        this.resizeObserver = null
+      }
+    }
+
+    if (this.map) return
+
+    loadLeaflet()
+      .then((L) => this.initMap(L))
+      .catch(() => {})
+  },
+
+  teardownMap() {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
       this.resizeObserver = null
@@ -103,11 +129,13 @@ export const FlightDeck = {
       this.map.remove()
       this.map = null
     }
+    this.marker = null
+    this.trail = null
   },
 
   initMap(L) {
     const root = this.el.querySelector("[data-map-root]")
-    if (!root || this.map) return
+    if (!root || this.map || !this.points.length) return
 
     const start = this.points[0]
     this.map = L.map(root, { zoomControl: true, attributionControl: true }).setView(
@@ -137,7 +165,6 @@ export const FlightDeck = {
 
     this.map.fitBounds(this.trail.getBounds(), { padding: [24, 24] })
 
-    // Leaflet needs a size recalc after flex/grid layout settles
     requestAnimationFrame(() => this.map.invalidateSize())
     this.resizeObserver = new ResizeObserver(() => {
       if (this.map) this.map.invalidateSize({ animate: false })
