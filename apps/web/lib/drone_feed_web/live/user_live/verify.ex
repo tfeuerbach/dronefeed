@@ -13,11 +13,11 @@ defmodule DroneFeedWeb.UserLive.Verify do
           <:subtitle>{@message}</:subtitle>
         </.header>
 
-        <.link :if={@ok?} navigate={~p"/users/log-in"} class="btn btn-primary">
+        <.link :if={@ok? == true} navigate={~p"/users/log-in"} class="btn btn-primary">
           Continue to log in
         </.link>
-        <.link :if={!@ok?} navigate={~p"/users/log-in"} class="btn btn-ghost">
-          Back to log in
+        <.link :if={@ok? == false} navigate={~p"/users/log-in"} class="btn btn-primary">
+          Go to log in
         </.link>
       </div>
     </Layouts.app>
@@ -26,6 +26,24 @@ defmodule DroneFeedWeb.UserLive.Verify do
 
   @impl true
   def mount(%{"token" => token}, _session, socket) do
+    socket =
+      socket
+      |> assign(:page_title, "Verifying…")
+      |> assign(:ok?, nil)
+      |> assign(:heading, "Verifying your email")
+      |> assign(:message, "One moment…")
+
+    # LiveView mounts twice (HTTP then websocket). Confirm only when connected
+    # so the one-time token is not consumed by the disconnected render — and so
+    # email link scanners that only GET the page cannot burn the token.
+    if connected?(socket) do
+      confirm(socket, token)
+    else
+      {:ok, socket}
+    end
+  end
+
+  defp confirm(socket, token) do
     login_url = url(~p"/users/log-in")
 
     case Accounts.confirm_user(token, login_url) do
@@ -43,12 +61,12 @@ defmodule DroneFeedWeb.UserLive.Verify do
       {:error, _} ->
         {:ok,
          socket
-         |> assign(:page_title, "Verification failed")
+         |> assign(:page_title, "Verification")
          |> assign(:ok?, false)
-         |> assign(:heading, "Link invalid or expired")
+         |> assign(:heading, "Link already used or expired")
          |> assign(
            :message,
-           "This verification link is invalid or has expired. Contact an administrator if you still need access."
+           "This verification link is no longer valid. If an administrator already approved you, try logging in — your account may already be verified."
          )}
     end
   end
