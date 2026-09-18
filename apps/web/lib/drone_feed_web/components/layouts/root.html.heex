@@ -39,14 +39,45 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const key = "df:embed";
+        const params = new URLSearchParams(window.location.search);
+        const embedParam = params.get("embed");
+
+        if (embedParam === "0" || embedParam === "false") {
+          try { sessionStorage.removeItem(key); } catch (_) {}
+        } else if (
+          embedParam === "1" ||
+          embedParam === "true" ||
+          window.self !== window.top
+        ) {
+          try { sessionStorage.setItem(key, "1"); } catch (_) {}
+        }
+
+        let embed = false;
+        try { embed = sessionStorage.getItem(key) === "1"; } catch (_) {}
+        if (!embed && window.self !== window.top) embed = true;
+
+        if (embed) {
+          root.classList.add("df-embed");
+          root.setAttribute("data-embed", "1");
+        } else {
+          root.classList.remove("df-embed");
+          root.removeAttribute("data-embed");
+        }
+      })();
+    </script>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
     <script>
       (() => {
+        const root = document.documentElement;
         const setTheme = (theme) => {
           localStorage.setItem("phx:theme", theme);
-          document.documentElement.setAttribute("data-theme", theme);
+          root.setAttribute("data-theme", theme);
         };
         const saved = localStorage.getItem("phx:theme");
         if (saved === "signal-dark" || saved === "signal") {

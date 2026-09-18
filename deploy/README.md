@@ -99,6 +99,38 @@ docker compose --env-file .env up -d --build
 - Credential restores: contact `ADMIN_CONTACT`
 - Settings: password change only
 
+## Embed in research tools (iframe)
+
+Self-hosters can iframe DroneFeed inside Gladius / other research UIs so users log in,
+create live sessions or uploads, and copy pull URLs without leaving the host app.
+
+1. Serve DroneFeed over **HTTPS** (Caddy already does this).
+2. In `.env`:
+
+```bash
+EMBED_COOKIES=true
+FRAME_ANCESTORS=*
+# Or restrict: FRAME_ANCESTORS=https://your-research-tool.example
+```
+
+`EMBED_COOKIES=true` sets session + remember-me cookies to `SameSite=None; Secure`
+so login works in a cross-origin iframe. `FRAME_ANCESTORS` clears `X-Frame-Options`
+and emits `Content-Security-Policy: frame-ancestors …`.
+
+3. Embed:
+
+```html
+<iframe
+  src="https://PHX_HOST/users/log-in?embed=1"
+  title="DroneFeed"
+  style="width:100%;height:100%;border:0;min-height:640px"
+  allow="clipboard-write"
+></iframe>
+```
+
+Unauthenticated users hitting `/flights` are redirected to login and returned afterward.
+`?embed=1` (or any iframe) keeps compact chrome via `sessionStorage` across that flow.
+
 ## Stream URL pattern
 
 - Pull (IP): `rtmp://MEDIA_IP:1935/vod/<flight_id>?user=drone&pass=<key>` / `rtsp://drone:<key>@MEDIA_IP:8554/vod/<flight_id>` / SRT as above

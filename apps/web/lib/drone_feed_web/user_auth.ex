@@ -11,11 +11,6 @@ defmodule DroneFeedWeb.UserAuth do
   # the session validity setting in UserToken.
   @max_cookie_age_in_days 14
   @remember_me_cookie "_drone_feed_web_user_remember_me"
-  @remember_me_options [
-    sign: true,
-    max_age: @max_cookie_age_in_days * 24 * 60 * 60,
-    same_site: "Lax"
-  ]
 
   # How old the session token should be before a new one is issued. When a request is made
   # with a session token older than this value, then a new session token will be created
@@ -56,7 +51,7 @@ defmodule DroneFeedWeb.UserAuth do
 
     conn
     |> renew_session(nil)
-    |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
+    |> delete_resp_cookie(@remember_me_cookie, remember_me_options())
     |> redirect(to: ~p"/")
   end
 
@@ -160,7 +155,11 @@ defmodule DroneFeedWeb.UserAuth do
   defp write_remember_me_cookie(conn, token) do
     conn
     |> put_session(:user_remember_me, true)
-    |> put_resp_cookie(@remember_me_cookie, token, @remember_me_options)
+    |> put_resp_cookie(@remember_me_cookie, token, remember_me_options())
+  end
+
+  defp remember_me_options do
+    DroneFeedWeb.SessionCookie.remember_me_options(@max_cookie_age_in_days * 24 * 60 * 60)
   end
 
   defp put_token_in_session(conn, token) do

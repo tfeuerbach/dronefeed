@@ -184,6 +184,86 @@ body {
   opacity: 0.85;
 }
 
+.df-nav--embed {
+  display: none;
+}
+
+html.df-embed .df-nav--full {
+  display: none;
+}
+
+html.df-embed .df-nav--embed {
+  display: block;
+}
+
+.df-nav-embed-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+}
+
+.df-nav-embed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+
+.df-brand--compact {
+  font-size: 0.875rem;
+}
+
+html.df-embed .df-shell::before {
+  display: none;
+}
+
+html.df-embed body {
+  background-image: none;
+}
+
+html.df-embed .df-main {
+  max-width: none;
+  padding: 0.75rem 0.65rem 1.25rem;
+}
+
+html.df-embed .df-main--theater {
+  max-width: none;
+  padding: 0.65rem 0.5rem 1rem;
+}
+
+html.df-embed .df-main--wide {
+  max-width: none;
+}
+
+html.df-embed .df-flight-header h1,
+html.df-embed h1 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+html.df-embed .df-panel {
+  padding: 0.75rem;
+}
+
+html.df-embed .df-reveal-item {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+@media (min-width: 640px) {
+  html.df-embed .df-main {
+    padding: 0.85rem 0.85rem 1.5rem;
+  }
+
+  html.df-embed .df-main--theater {
+    padding: 0.75rem 0.75rem 1.25rem;
+  }
+}
+
 .df-brand {
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -760,8 +840,92 @@ body {
   margin-inline: auto;
 }
 
+.df-auth.df-auth--wide,
 .df-auth.max-w-lg {
   max-width: 32rem;
+}
+
+.df-main--auth {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100dvh - 4.5rem);
+}
+
+html.df-embed .df-main--auth {
+  min-height: calc(100dvh - 2.75rem);
+  padding: 0.75rem 0.65rem 1rem;
+  justify-content: center;
+}
+
+html.df-embed .df-auth {
+  width: 100%;
+  max-width: 22rem;
+  margin-inline: auto;
+}
+
+html.df-embed .df-auth.df-auth--wide {
+  max-width: min(28rem, 100%);
+}
+
+html.df-embed .df-auth header {
+  padding-bottom: 0.35rem;
+}
+
+html.df-embed .df-auth header h1 {
+  font-size: 1.15rem;
+  line-height: 1.3;
+}
+
+html.df-embed .df-auth header p {
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+html.df-embed .df-auth-panel {
+  padding: 0.85rem 0.9rem;
+}
+
+html.df-embed .df-auth-footer {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+html.df-embed .df-auth-footer-extra {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+html.df-embed .df-home-main {
+  padding: 0.5rem 0.65rem 0.85rem;
+  max-width: none;
+}
+
+html.df-embed .df-home-hero {
+  min-height: calc(100dvh - 3.5rem);
+  padding: 1rem 0.25rem;
+  gap: 1rem;
+  justify-content: center;
+}
+
+html.df-embed .df-home-mark {
+  width: 2rem;
+  height: 2rem;
+}
+
+html.df-embed .df-home-title {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+html.df-embed .df-home-copy {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  max-width: 28rem;
+}
+
+.df-home-hero {
+  min-height: 70vh;
 }
 
 .df-field-hint {

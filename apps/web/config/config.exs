@@ -115,6 +115,10 @@ config :drone_feed,
   publish_gop: 30,
   publish_x264_preset: "veryfast",
   publish_x264_profile: "main",
+  # Cross-origin iframe embeds (research tools). Override via env in prod.
+  session_same_site: "Lax",
+  session_cookie_secure: false,
+  frame_ancestors: nil,
   show_dev_login_hint: false,
   admin_contact: "your system administrator",
   mail_from: {"DroneFeed", "dronefeed@tfeuerbach.dev"}

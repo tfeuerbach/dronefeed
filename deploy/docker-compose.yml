@@ -47,6 +47,10 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-DroneFeed}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       SMTP_SSL: ${SMTP_SSL:-false}
+      EMBED_COOKIES: ${EMBED_COOKIES:-false}
+      SESSION_SAME_SITE: ${SESSION_SAME_SITE:-}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-}
+      FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
       MUX_SCRIPT: /app/scripts/mux_to_stanag.py
       EXTRACT_KLV_SCRIPT: /app/scripts/extract_klv_track.py
       PYTHON_PATH: python3

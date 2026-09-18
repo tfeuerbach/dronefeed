@@ -6,8 +6,8 @@ defmodule DroneFeedWeb.UserLive.Verify do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="df-auth mx-auto max-w-md space-y-6 text-center">
+    <Layouts.app flash={@flash} current_scope={@current_scope} main_class="df-main--auth">
+      <div class="df-auth space-y-4 text-center">
         <.header>
           {@heading}
           <:subtitle>{@message}</:subtitle>

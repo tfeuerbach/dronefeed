@@ -25,7 +25,7 @@ defmodule DroneFeedWeb.Layouts do
 
     ~H"""
     <div class="df-shell">
-      <header class="df-nav">
+      <header class="df-nav df-nav--full">
         <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <a
             href={if(@current_scope, do: ~p"/flights", else: ~p"/")}
@@ -82,6 +82,60 @@ defmodule DroneFeedWeb.Layouts do
               <.link navigate={~p"/users/log-in"} class="btn btn-primary btn-sm">Log in</.link>
             <% end %>
             <.theme_toggle />
+          </nav>
+        </div>
+      </header>
+
+      <header class="df-nav df-nav--embed">
+        <div class="df-nav-embed-inner">
+          <a
+            href={if(@current_scope, do: ~p"/flights", else: ~p"/")}
+            class="df-brand df-brand--compact flex items-center gap-2"
+          >
+            <img
+              src={~p"/images/brand-mark.svg"}
+              width="22"
+              height="22"
+              alt=""
+              class="df-brand-mark-img"
+            />
+            <span>DroneFeed</span>
+          </a>
+
+          <nav class="df-nav-embed-actions">
+            <%= if @current_scope do %>
+              <a href={~p"/flights"} class="btn btn-ghost btn-xs font-medium">Flights</a>
+              <a href={~p"/flights/public"} class="btn btn-ghost btn-xs font-medium">Public</a>
+              <.link
+                navigate={~p"/users/settings"}
+                class="btn btn-ghost btn-xs max-w-[8rem] truncate font-medium"
+                title="Account settings"
+              >
+                {DroneFeed.Accounts.User.display_name(@current_scope.user)}
+              </.link>
+              <.link
+                :if={DroneFeed.Accounts.User.admin?(@current_scope.user)}
+                navigate={~p"/admin"}
+                class="btn btn-ghost btn-xs font-medium"
+              >
+                Admin
+              </.link>
+              <.link href={~p"/users/log-out"} method="delete" class="btn btn-ghost btn-xs">
+                Log out
+              </.link>
+            <% else %>
+              <.link navigate={~p"/users/log-in"} class="btn btn-primary btn-xs">Log in</.link>
+            <% end %>
+            <.theme_toggle />
+            <a
+              href={~p"/flights"}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-ghost btn-xs font-medium"
+              title="Open DroneFeed in a new tab"
+            >
+              Full site
+            </a>
           </nav>
         </div>
       </header>

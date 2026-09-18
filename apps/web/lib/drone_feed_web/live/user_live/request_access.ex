@@ -7,17 +7,16 @@ defmodule DroneFeedWeb.UserLive.RequestAccess do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="df-auth mx-auto max-w-lg space-y-6">
+    <Layouts.app flash={@flash} current_scope={@current_scope} main_class="df-main--auth">
+      <div class="df-auth df-auth--wide space-y-4">
         <.header>
           Request an account
           <:subtitle>
-            Submit your details for administrator review. After approval you will receive
-            an email to verify your address before you can log in or upload flights.
+            Admin review required. After approval you get a verification email, then you can log in.
           </:subtitle>
         </.header>
 
-        <div class="df-panel space-y-4">
+        <div class="df-panel df-auth-panel space-y-4">
           <.form
             for={@form}
             id="account_request_form"
@@ -81,7 +80,7 @@ defmodule DroneFeedWeb.UserLive.RequestAccess do
           </.form>
         </div>
 
-        <p class="text-center text-sm text-base-content/60">
+        <p class="df-auth-footer text-center text-sm text-base-content/60">
           Already approved?
           <.link navigate={~p"/users/log-in"} class="font-medium text-primary hover:underline">
             Log in

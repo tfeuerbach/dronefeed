@@ -4,25 +4,25 @@ defmodule DroneFeedWeb.UserLive.Login do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="df-auth space-y-6">
+    <Layouts.app flash={@flash} current_scope={@current_scope} main_class="df-main--auth">
+      <div class="df-auth space-y-4">
         <.header>
           Log in
           <:subtitle>
             <%= if @current_scope do %>
-              You need to reauthenticate to continue.
+              Reauthenticate to continue.
             <% else %>
               <%= if @show_dev_login_hint do %>
                 Local default: <span class="font-mono text-sm">admin@localhost</span> /
                 <span class="font-mono text-sm">admin</span>
               <% else %>
-                Use an approved, verified account to continue.
+                Sign in to your DroneFeed instance.
               <% end %>
             <% end %>
           </:subtitle>
         </.header>
 
-        <div class="df-panel space-y-4">
+        <div class="df-panel df-auth-panel space-y-4">
           <.form
             :let={f}
             for={@form}
@@ -55,13 +55,15 @@ defmodule DroneFeedWeb.UserLive.Login do
           </.form>
         </div>
 
-        <p :if={!@current_scope} class="text-center text-sm text-base-content/60">
+        <p :if={!@current_scope} class="df-auth-footer text-center text-sm text-base-content/60">
           Need access?
           <.link navigate={~p"/users/request-access"} class="font-medium text-primary hover:underline">
             Request an account
           </.link>
-          · Forgot credentials? Contact
-          <span class="font-medium text-base-content/80">{@admin_contact}</span>
+          <span class="df-auth-footer-extra">
+            · Forgot credentials? Contact
+            <span class="font-medium text-base-content/80">{@admin_contact}</span>
+          </span>
         </p>
       </div>
     </Layouts.app>

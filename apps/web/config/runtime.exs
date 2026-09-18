@@ -73,6 +73,27 @@ if config_env() == :prod do
       _ -> detect_public_ipv4.() || media_host
     end
 
+  embed_cookies? =
+    System.get_env("EMBED_COOKIES", "false") in ~w(true 1 yes) or
+      System.get_env("SESSION_SAME_SITE", "") |> String.downcase() == "none"
+
+  session_same_site =
+    cond do
+      embed_cookies? -> "None"
+      s = System.get_env("SESSION_SAME_SITE") -> s
+      true -> "Lax"
+    end
+
+  session_cookie_secure =
+    System.get_env("SESSION_COOKIE_SECURE", "false") in ~w(true 1 yes) or
+      session_same_site == "None"
+
+  frame_ancestors =
+    case System.get_env("FRAME_ANCESTORS") do
+      v when is_binary(v) and v != "" -> v
+      _ -> nil
+    end
+
   config :drone_feed,
     storage_root: System.get_env("STORAGE_ROOT") || "/var/lib/drone-feed/storage",
     media_host: media_host,
@@ -109,7 +130,10 @@ if config_env() == :prod do
     publish_video_bufsize: System.get_env("PUBLISH_VIDEO_BUFSIZE") || "4M",
     publish_gop: System.get_env("PUBLISH_GOP") || "30",
     publish_x264_preset: System.get_env("PUBLISH_X264_PRESET") || "veryfast",
-    publish_x264_profile: System.get_env("PUBLISH_X264_PROFILE") || "main"
+    publish_x264_profile: System.get_env("PUBLISH_X264_PROFILE") || "main",
+    session_same_site: session_same_site,
+    session_cookie_secure: session_cookie_secure,
+    frame_ancestors: frame_ancestors
 
   database_url =
     System.get_env("DATABASE_URL") ||

@@ -180,13 +180,6 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   </button>
                 </div>
               </div>
-              <div :if={session.publishing} class="mt-3">
-                <.stream_pull_urls
-                  urls={Streaming.urls(session)}
-                  kind={:live}
-                  show_pull={true}
-                />
-              </div>
             </li>
           </ul>
         </section>
@@ -199,7 +192,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
             No recordings yet. Live sessions are listed above.
           </div>
           <ul id="flights" class="space-y-3">
-            <li :for={flight <- @flights} id={"flight-#{flight.id}"} class="df-panel space-y-3">
+            <li :for={flight <- @flights} id={"flight-#{flight.id}"} class="df-panel">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0 space-y-1">
                   <div class="flex items-center gap-2">
@@ -247,9 +240,6 @@ defmodule DroneFeedWeb.FlightLive.Index do
                     Delete
                   </button>
                 </div>
-              </div>
-              <div :if={flight.publishing}>
-                <.stream_pull_urls urls={Streaming.flight_urls(flight)} kind={:flight} />
               </div>
             </li>
           </ul>

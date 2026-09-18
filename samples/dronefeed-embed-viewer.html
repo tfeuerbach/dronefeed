@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DroneFeed embed sample</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1419;
+        --panel: #1a222c;
+        --border: #2a3542;
+        --text: #e8edf2;
+        --muted: #8b9aab;
+        --accent: #0d9f8f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background:
+          radial-gradient(ellipse 80% 50% at 10% -10%, #0d9f8f33, transparent),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100dvh;
+      }
+
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem 1rem;
+        padding: 0.85rem 1.1rem;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .controls {
+        display: flex;
+        flex: 1;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      label {
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      input[type="url"] {
+        width: min(28rem, 100%);
+        padding: 0.45rem 0.65rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.85rem;
+      }
+
+      button {
+        padding: 0.45rem 0.8rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #04241f;
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .stage {
+        padding: 0.85rem;
+        min-height: 0;
+      }
+
+      .frame-wrap {
+        height: calc(100dvh - 5.5rem);
+        min-height: 480px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--panel);
+        box-shadow: 0 12px 40px #0006;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #fff;
+      }
+
+      .hint {
+        margin: 0.55rem 0 0;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      code {
+        font-family: ui-monospace, "Cascadia Code", monospace;
+        font-size: 0.85em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>Research tool · DroneFeed embed</h1>
+          <p>Simulates a host app iframe. Login, create feeds, copy pull URLs inside the panel.</p>
+        </div>
+        <div class="controls">
+          <label for="src">Embed URL</label>
+          <input
+            id="src"
+            type="url"
+            spellcheck="false"
+            value="https://dronefeed.tfeuerbach.dev/users/log-in?embed=1"
+          />
+          <button type="button" id="load">Load</button>
+          <button type="button" class="secondary" id="open">Open top-level</button>
+        </div>
+      </header>
+
+      <main class="stage">
+        <div class="frame-wrap">
+          <iframe
+            id="frame"
+            title="DroneFeed"
+            src="https://dronefeed.tfeuerbach.dev/users/log-in?embed=1"
+            allow="clipboard-write; fullscreen"
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
+        </div>
+        <p class="hint">
+          Host must allow framing (<code>FRAME_ANCESTORS</code>) and use
+          <code>SameSite=None; Secure</code> cookies (<code>EMBED_COOKIES=true</code>).
+          Prefer <code>?embed=1</code> so compact chrome stays on after LiveView navigations.
+        </p>
+      </main>
+    </div>
+
+    <script>
+      const input = document.getElementById("src");
+      const frame = document.getElementById("frame");
+
+      function withEmbed(url) {
+        try {
+          const u = new URL(url);
+          if (!u.searchParams.has("embed")) u.searchParams.set("embed", "1");
+          return u.toString();
+        } catch {
+          return url;
+        }
+      }
+
+      document.getElementById("load").addEventListener("click", () => {
+        frame.src = withEmbed(input.value.trim());
+      });
+
+      document.getElementById("open").addEventListener("click", () => {
+        window.open(withEmbed(input.value.trim()), "_blank", "noopener,noreferrer");
+      });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") document.getElementById("load").click();
+      });
+    </script>
+  </body>
+</html>
