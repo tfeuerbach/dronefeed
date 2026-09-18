@@ -3,6 +3,19 @@
 }
 
 {$PHX_HOST} {
-	encode gzip
-	reverse_proxy web:4000
+	# Browser live preview — same-origin HTTPS → MediaMTX HLS (no mixed content).
+	# /hls/live/<id>/index.m3u8 → mediamtx /live/<id>/index.m3u8
+	# MediaMTX cookie-check redirects use /live/...; rewrite them under /hls/.
+	handle_path /hls/* {
+		reverse_proxy mediamtx:8888 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_down Location /live/ /hls/live/
+		}
+	}
+
+	handle {
+		encode gzip
+		reverse_proxy web:4000
+	}
 }

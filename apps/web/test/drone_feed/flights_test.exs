@@ -57,6 +57,24 @@ defmodule DroneFeed.FlightsTest do
     assert Enum.map(Flights.list_published_flights(scope), & &1.id) == [flight.id]
   end
 
+  test "uploader and admin can delete; other users cannot", %{scope: scope} do
+    video = tmp_file("del.mp4", "videodata")
+    {:ok, flight} = Flights.create_flight(scope, %{"name" => "Delete me"}, %{video: video})
+
+    {:ok, other} = Accounts.register_user(%{email: "other@example.com", status: "active"})
+    other_scope = Scope.for_user(other)
+    refute Flights.can_delete?(other_scope, flight)
+    assert {:error, :forbidden} = Flights.delete_flight(other_scope, flight.id)
+
+    admin = DroneFeed.AccountsFixtures.admin_fixture()
+    admin_scope = Scope.for_user(admin)
+    assert Flights.can_delete?(admin_scope, flight)
+    assert Flights.can_delete?(scope, flight)
+
+    assert {:ok, _} = Flights.delete_flight(admin_scope, flight.id)
+    assert_raise Ecto.NoResultsError, fn -> Flights.get_flight!(scope, flight.id) end
+  end
+
   defp tmp_file(name, contents) do
     path = Path.join(System.tmp_dir!(), "#{System.unique_integer([:positive])}-#{name}")
     File.write!(path, contents)

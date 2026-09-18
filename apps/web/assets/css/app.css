@@ -335,6 +335,77 @@ body {
   object-fit: contain;
 }
 
+.df-live-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-box);
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+  background: oklch(12% 0.02 220);
+}
+
+.df-live-preview-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: min(50vh, 28rem);
+  background: oklch(10% 0.02 220);
+  object-fit: contain;
+}
+
+.df-live-preview-status {
+  position: absolute;
+  inset: auto 0 0 0;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.75rem;
+  color: oklch(92% 0.02 220);
+  background: linear-gradient(transparent, oklch(12% 0.02 220 / 0.88));
+  pointer-events: none;
+}
+
+.df-live-deck {
+  grid-template-areas:
+    "stage"
+    "urls";
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-live-deck .df-flight-urls {
+  grid-area: urls;
+}
+
+.df-copy-row {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.35rem;
+}
+
+.df-copy-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-base-content) 45%, transparent);
+}
+
+.df-copy-controls {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.df-copy-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-field, 0.35rem);
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 88%, transparent);
+  color: var(--color-base-content);
+}
+
 .df-flight-side-head {
   display: grid;
   gap: 0.15rem;

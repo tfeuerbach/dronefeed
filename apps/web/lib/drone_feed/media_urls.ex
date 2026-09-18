@@ -72,6 +72,38 @@ defmodule DroneFeed.MediaURLs do
     "#{id}?user=drone&pass=#{URI.encode_www_form(stream_key)}"
   end
 
+  @doc """
+  Same-origin HLS playlist for the browser UI (proxied by Caddy at `/hls/...`).
+
+  Avoids mixed-content blocks when the app is HTTPS and MediaMTX HLS is plain HTTP.
+  Auth via Basic (`drone` / stream key) or `?user=&pass=` — the LiveHlsPreview hook
+  sends Basic on each request.
+  """
+  def hls_browser_url(kind, id, opts \\ []) when kind in [:vod, :live] do
+    host = Keyword.get(opts, :host, web_host())
+    port = Keyword.get(opts, :port, web_port())
+    scheme = Keyword.get(opts, :scheme, web_scheme())
+    path = "/hls/#{stream_path(kind, id)}/index.m3u8"
+
+    authority =
+      cond do
+        scheme == "https" and port in [443, "443"] -> host
+        scheme == "http" and port in [80, "80"] -> host
+        true -> "#{host}:#{port}"
+      end
+
+    "#{scheme}://#{authority}#{path}"
+  end
+
+  @doc """
+  Direct MediaMTX HLS playlist (`http://MEDIA_IP:8888/...`) for tools / ops.
+  """
+  def hls_url(kind, id, opts \\ []) when kind in [:vod, :live] do
+    host = Keyword.get(opts, :host, media_ip())
+    port = Keyword.get(opts, :port, hls_port())
+    "http://#{host}:#{port}/#{stream_path(kind, id)}/index.m3u8"
+  end
+
   def rtsp_url(kind, id, opts \\ []) do
     host = Keyword.get(opts, :host, media_ip())
     port = Keyword.get(opts, :port, rtsp_port())
@@ -174,6 +206,7 @@ defmodule DroneFeed.MediaURLs do
   defp rtmp_port, do: Application.fetch_env!(:drone_feed, :rtmp_port)
   defp rtsp_port, do: Application.fetch_env!(:drone_feed, :rtsp_port)
   defp srt_port, do: Application.get_env(:drone_feed, :srt_port, 8890)
+  defp hls_port, do: Application.get_env(:drone_feed, :hls_port, 8888)
 
   defp web_host do
     Application.get_env(:drone_feed, :web_host) || media_domain() || media_ip()

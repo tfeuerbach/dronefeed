@@ -106,8 +106,8 @@ defmodule DroneFeed.Streaming.MediaAuth do
   end
 
   defp stringify(nil), do: ""
-  defp stringify(value) when is_binary(value), do: value
-  defp stringify(value), do: to_string(value)
+  defp stringify(value) when is_binary(value), do: String.trim(value)
+  defp stringify(value), do: value |> to_string() |> String.trim()
 
   defp log_auth(payload, result) do
     path = get(payload, "path") || ""

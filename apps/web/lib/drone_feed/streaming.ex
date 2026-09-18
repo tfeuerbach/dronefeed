@@ -1,6 +1,9 @@
 defmodule DroneFeed.Streaming do
   @moduledoc """
   Live ingest sessions: companion RTMP/RTSP push, or drone MPEG-TS over UDP.
+
+  Active sessions are a shared library (like recorded flights). Creating and
+  ending a session stays with the owner.
   """
 
   import Ecto.Query
@@ -13,20 +16,53 @@ defmodule DroneFeed.Streaming do
   alias DroneFeed.Streaming.MediaMTX
   alias DroneFeed.Streaming.UdpPorts
 
-  def list_live_sessions(%Scope{user: user}) do
+  @doc """
+  Lists all active live sessions (shared library).
+  """
+  def list_live_sessions(%Scope{}) do
     LiveSession
-    |> where([s], s.user_id == ^user.id and s.active == true)
+    |> where([s], s.active == true)
     |> order_by([s], desc: s.inserted_at)
+    |> preload(:user)
     |> Repo.all()
   end
 
-  def get_live_session!(%Scope{user: user}, id) do
+  def get_live_session!(%Scope{}, id) do
     LiveSession
-    |> where([s], s.id == ^id and s.user_id == ^user.id)
+    |> where([s], s.id == ^id)
+    |> preload(:user)
     |> Repo.one!()
   end
 
   def get_live_session(id) when is_binary(id), do: Repo.get(LiveSession, id)
+
+  @doc """
+  Fetches an active live session for the shared library detail page.
+  """
+  def fetch_active_live_session(%Scope{}, id) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, _} ->
+        case LiveSession
+             |> where([s], s.id == ^id and s.active == true)
+             |> preload(:user)
+             |> Repo.one() do
+          nil -> {:error, :not_found}
+          session -> {:ok, session}
+        end
+
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  def owns?(%Scope{user: %{id: user_id}}, %LiveSession{user_id: user_id}), do: true
+  def owns?(_, _), do: false
+
+  @doc """
+  Session owners may end their own live feeds; admins may end any.
+  """
+  def can_end?(%Scope{user: %{role: "admin"}}, %LiveSession{}), do: true
+  def can_end?(%Scope{} = scope, %LiveSession{} = session), do: owns?(scope, session)
 
   def create_live_session(%Scope{user: user}, attrs) do
     mode = ingest_mode_from_attrs(attrs)
@@ -45,7 +81,7 @@ defmodule DroneFeed.Streaming do
           {:ok, session} ->
             case provision_ingest(session) do
               :ok ->
-                session
+                Repo.preload(session, :user)
 
               {:error, reason} ->
                 UdpPorts.release(session.udp_port)
@@ -68,18 +104,23 @@ defmodule DroneFeed.Streaming do
 
   def end_live_session(%Scope{} = scope, id) do
     session = get_live_session!(scope, id)
-    _ = teardown_ingest(session)
-    port = session.udp_port
 
-    case session
-         |> LiveSession.changeset(%{"active" => false, "udp_port" => nil})
-         |> Repo.update() do
-      {:ok, _ended} = ok ->
-        UdpPorts.release(port)
-        ok
+    if can_end?(scope, session) do
+      _ = teardown_ingest(session)
+      port = session.udp_port
 
-      other ->
-        other
+      case session
+           |> LiveSession.changeset(%{"active" => false, "udp_port" => nil})
+           |> Repo.update() do
+        {:ok, _ended} = ok ->
+          UdpPorts.release(port)
+          ok
+
+        other ->
+          other
+      end
+    else
+      {:error, :forbidden}
     end
   end
 
@@ -117,6 +158,7 @@ defmodule DroneFeed.Streaming do
       media_ip: ip,
       media_domain: domain,
       ingest_mode: session.ingest_mode,
+      hls_pull: MediaURLs.hls_browser_url(:live, session.id),
       rtmp_pull: MediaURLs.rtmp_url(:live, session.id, [host: ip] ++ key_opts),
       rtsp_pull: MediaURLs.rtsp_url(:live, session.id, [host: ip] ++ key_opts),
       srt_pull: MediaURLs.srt_mpegts_url(:live, session.id, [host: ip] ++ key_opts),

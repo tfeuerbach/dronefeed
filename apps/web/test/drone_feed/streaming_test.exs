@@ -19,6 +19,7 @@ defmodule DroneFeed.StreamingTest do
     assert urls.rtmp_dji_server =~ "/live"
     assert urls.rtmp_dji_key == "#{session.id}?user=drone&pass=#{URI.encode_www_form(session.stream_key)}"
     assert urls.rtmp_pull =~ "?user=drone&pass=#{URI.encode_www_form(session.stream_key)}"
+    assert urls.hls_pull =~ "/hls/live/#{session.id}/index.m3u8"
     assert urls.rtsp_pull =~ "rtsp://drone:#{session.stream_key}@"
     assert urls.srt_pull =~ ":drone:#{session.stream_key}"
     refute Map.has_key?(urls, :stream_key)
@@ -59,5 +60,37 @@ defmodule DroneFeed.StreamingTest do
              Streaming.create_live_session(scope, %{"name" => "C", "ingest_mode" => "udp_mpegts"})
 
     assert c.udp_port == a.udp_port
+  end
+
+  test "lists active sessions globally and restricts end to owner", %{scope: scope} do
+    other = DroneFeed.AccountsFixtures.user_scope_fixture()
+
+    assert {:ok, mine} = Streaming.create_live_session(scope, %{"name" => "Mine"})
+    assert {:ok, theirs} = Streaming.create_live_session(other, %{"name" => "Theirs"})
+
+    ids = Streaming.list_live_sessions(scope) |> Enum.map(& &1.id)
+    assert mine.id in ids
+    assert theirs.id in ids
+
+    assert Streaming.owns?(scope, mine)
+    refute Streaming.owns?(scope, theirs)
+    refute Streaming.can_end?(scope, theirs)
+
+    assert {:error, :forbidden} = Streaming.end_live_session(scope, theirs.id)
+
+    admin_scope = DroneFeed.AccountsFixtures.user_scope_fixture(DroneFeed.AccountsFixtures.admin_fixture())
+    assert Streaming.can_end?(admin_scope, theirs)
+    assert {:ok, _} = Streaming.end_live_session(admin_scope, theirs.id)
+  end
+
+  test "fetch_active_live_session finds shared active sessions", %{scope: scope} do
+    other = DroneFeed.AccountsFixtures.user_scope_fixture()
+    assert {:ok, theirs} = Streaming.create_live_session(other, %{"name" => "Shared"})
+
+    assert {:ok, found} = Streaming.fetch_active_live_session(scope, theirs.id)
+    assert found.id == theirs.id
+
+    assert {:ok, _} = Streaming.end_live_session(other, theirs.id)
+    assert {:error, :not_found} = Streaming.fetch_active_live_session(scope, theirs.id)
   end
 end

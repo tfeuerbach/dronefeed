@@ -45,6 +45,15 @@ defmodule DroneFeedWeb.FlightLive.Show do
             <p :if={!@owner? and @flight.publishing} class="text-sm text-base-content/50">
               Public · pull endpoints below
             </p>
+            <button
+              :if={@can_delete?}
+              type="button"
+              class="btn btn-ghost btn-sm text-error"
+              phx-click="delete"
+              data-confirm="Delete this flight?"
+            >
+              Delete
+            </button>
           </div>
         </header>
 
@@ -231,6 +240,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
      |> assign(:page_title, flight.name)
      |> assign(:flight, flight)
      |> assign(:owner?, Flights.owns?(scope, flight))
+     |> assign(:can_delete?, Flights.can_delete?(scope, flight))
      |> assign(:telemetry, telemetry)
      |> assign(:readout, %{lat: stats.lat, lon: stats.lon, alt: stats.alt})
      |> assign(:log_filter, :all)
@@ -257,6 +267,21 @@ defmodule DroneFeedWeb.FlightLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not start public feed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("delete", _params, socket) do
+    scope = socket.assigns.current_scope
+
+    case Flights.delete_flight(scope, socket.assigns.flight.id) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Flight deleted")
+         |> push_navigate(to: ~p"/flights")}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only the uploader or an admin can delete this flight")}
     end
   end
 

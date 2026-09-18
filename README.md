@@ -80,7 +80,7 @@ flowchart TB
 
 | Mode | How it enters MediaMTX | How tools pull |
 |------|------------------------|----------------|
-| **Phone / DJI Custom RTMP** (Mavic, Mini, Air, …) | DJI Fly/GO → livestream → **Custom RTMP**; paste the session RTMP URL (or Server=`rtmp://MEDIA_IP:1935/live` + Stream key=`<id>?user=drone&pass=<token>`). **Video/AAC only** — no map/.SRT until you upload after landing. | Same RTSP/RTMP/SRT pull URLs |
+| **Phone / DJI Custom RTMP** (Mavic, Mini, Air, …) | DJI Fly/GO → livestream → **Custom RTMP**; use **Copy** on the session page for Server/Stream key (hand-selecting can insert a trailing newline that breaks DJI). **Video/AAC only**. Open `/live/<id>` from Flights for the HLS preview. | Same RTSP/RTMP/SRT pull URLs |
 | **Companion RTSP** | App publishes RTSP to `/live/<id>` | Same pull URLs |
 | **Drone UDP** | Encoder sends MPEG-TS to `udp://MEDIA_IP:<port>` | Same pull URLs (+ KLV if present) |
 

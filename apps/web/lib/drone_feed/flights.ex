@@ -53,6 +53,12 @@ defmodule DroneFeed.Flights do
   def owns?(%Scope{user: %{id: user_id}}, %Flight{user_id: user_id}), do: true
   def owns?(_, _), do: false
 
+  @doc """
+  Uploaders may delete their own flights; admins may delete any flight.
+  """
+  def can_delete?(%Scope{user: %{role: "admin"}}, %Flight{}), do: true
+  def can_delete?(%Scope{} = scope, %Flight{} = flight), do: owns?(scope, flight)
+
   def create_flight(%Scope{user: user}, attrs, files) do
     retention_days = Application.fetch_env!(:drone_feed, :retention_days)
 
@@ -126,7 +132,7 @@ defmodule DroneFeed.Flights do
   def delete_flight(%Scope{} = scope, flight_id) do
     flight = get_flight!(scope, flight_id)
 
-    if owns?(scope, flight) do
+    if can_delete?(scope, flight) do
       PublisherSupervisor.stop_publisher(flight.id)
       cleanup_files(flight)
       Repo.delete(flight)

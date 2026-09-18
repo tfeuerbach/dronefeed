@@ -44,6 +44,7 @@ defmodule DroneFeedWeb.Router do
       live "/flights/public", FlightLive.Published, :index
       live "/flights/:id", FlightLive.Show, :show
       live "/live", LiveSessionLive.Index, :index
+      live "/live/:id", LiveSessionLive.Show, :show
       live "/users/settings", UserLive.Settings, :edit
     end
 

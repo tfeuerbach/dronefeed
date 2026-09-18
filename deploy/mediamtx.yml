@@ -20,6 +20,15 @@ rtmp: true
 rtmpAddress: :1935
 hls: true
 hlsAddress: :8888
+# Browser live preview — keep playlist short and remux immediately so
+# readers are not stuck ~N×GOP behind the publisher (DJI GOPs are often 2–4s+).
+hlsAlwaysRemux: true
+hlsVariant: lowLatency
+# LL-HLS requires ≥7; latency is controlled by the player staying on the live edge.
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsMuxerCloseAfter: 30s
 webrtc: false
 srt: true
 srtAddress: :8890

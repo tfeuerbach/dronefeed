@@ -8,6 +8,8 @@ import {FlightTerminal} from "./hooks/flight_terminal"
 import {PageMotion} from "./hooks/page_motion"
 import {LocationSuggest} from "./hooks/location_suggest"
 import {PasswordReveal} from "./hooks/password_reveal"
+import {LiveHlsPreview} from "./hooks/live_hls_preview"
+import {CopyField} from "./hooks/copy_field"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
@@ -20,6 +22,8 @@ const liveSocket = new LiveSocket("/live", Socket, {
     PageMotion,
     LocationSuggest,
     PasswordReveal,
+    LiveHlsPreview,
+    CopyField,
   },
 })
 

@@ -126,34 +126,52 @@ defmodule DroneFeedWeb.FlightLive.Index do
             <li
               :for={session <- @sessions}
               id={"live-session-#{session.id}"}
-              class="df-panel space-y-3"
+              class="df-panel"
             >
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="df-live-dot" title="Active"></span>
-                  <p class="font-medium">{session.name}</p>
-                  <span class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px] uppercase text-base-content/50">
-                    {if session.ingest_mode == "udp_mpegts", do: "udp", else: "push"}
-                  </span>
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0 space-y-1">
+                  <div class="flex items-center gap-2">
+                    <span class="df-live-dot" title="Live session"></span>
+                    <.link
+                      navigate={~p"/live/#{session.id}"}
+                      class="truncate font-medium hover:text-primary"
+                    >
+                      {session.name}
+                    </.link>
+                    <span class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px] uppercase text-base-content/50">
+                      {if session.ingest_mode == "udp_mpegts", do: "udp", else: "push"}
+                    </span>
+                  </div>
+                  <p :if={session.user} class="text-xs text-base-content/45">
+                    Started by {session.user.email}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-warning btn-sm"
-                  phx-click="end_live"
-                  phx-value-id={session.id}
-                  data-confirm="End this live session?"
-                >
-                  End session
-                </button>
+                <div class="flex items-center gap-2">
+                  <.link navigate={~p"/live/#{session.id}"} class="btn btn-ghost btn-sm">
+                    Open
+                  </.link>
+                  <button
+                    :if={Streaming.can_end?(@current_scope, session)}
+                    type="button"
+                    class="btn btn-warning btn-sm"
+                    phx-click="end_live"
+                    phx-value-id={session.id}
+                    data-confirm="End this live session?"
+                  >
+                    End
+                  </button>
+                </div>
               </div>
-              <.stream_pull_urls urls={Streaming.urls(session)} kind={:live} />
             </li>
           </ul>
         </section>
 
         <section class="df-reveal-item space-y-4" style="--df-i: 2">
-          <div :if={@flights == []} class="df-panel text-sm text-base-content/60">
+          <div :if={@flights == [] and @sessions == []} class="df-panel text-sm text-base-content/60">
             No recordings yet. Upload a flight or start a live session above.
+          </div>
+          <div :if={@flights == [] and @sessions != []} class="df-panel text-sm text-base-content/60">
+            No recordings yet. Live sessions are listed above.
           </div>
           <ul id="flights" class="space-y-3">
             <li :for={flight <- @flights} id={"flight-#{flight.id}"} class="df-panel space-y-3">
@@ -194,7 +212,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
                     />
                   </label>
                   <button
-                    :if={Flights.owns?(@current_scope, flight)}
+                    :if={Flights.can_delete?(@current_scope, flight)}
                     type="button"
                     class="btn btn-ghost btn-sm text-error"
                     phx-click="delete"
@@ -315,13 +333,11 @@ defmodule DroneFeedWeb.FlightLive.Index do
     scope = socket.assigns.current_scope
 
     case Streaming.create_live_session(scope, params) do
-      {:ok, _session} ->
+      {:ok, session} ->
         {:noreply,
          socket
          |> put_flash(:info, "Live session created")
-         |> assign(:sessions, Streaming.list_live_sessions(scope))
-         |> assign(:live_form, to_form(Streaming.change_live_session(%LiveSession{})))
-         |> assign(:create_mode, :live)}
+         |> push_navigate(to: ~p"/live/#{session.id}")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, live_form: to_form(changeset))}
@@ -337,8 +353,17 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
   def handle_event("end_live", %{"id" => id}, socket) do
     scope = socket.assigns.current_scope
-    {:ok, _} = Streaming.end_live_session(scope, id)
-    {:noreply, assign(socket, sessions: Streaming.list_live_sessions(scope))}
+
+    case Streaming.end_live_session(scope, id) do
+      {:ok, _} ->
+        {:noreply, assign(socket, sessions: Streaming.list_live_sessions(scope))}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only the session owner or an admin can end it")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not end session: #{inspect(reason)}")}
+    end
   end
 
   def handle_event("toggle_publish", %{"id" => id}, socket) do
@@ -368,7 +393,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
         {:noreply, assign(socket, flights: Flights.list_flights(scope))}
 
       {:error, :forbidden} ->
-        {:noreply, put_flash(socket, :error, "Only the uploader can delete this flight")}
+        {:noreply, put_flash(socket, :error, "Only the uploader or an admin can delete this flight")}
     end
   end
 

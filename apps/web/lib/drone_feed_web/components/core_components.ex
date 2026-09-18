@@ -608,69 +608,47 @@ defmodule DroneFeedWeb.CoreComponents do
         </p>
       <% else %>
         <%= if @urls[:udp_ingest] do %>
-          <p class="text-primary">
-            <span class="text-base-content/50">UDP MPEG-TS ingest</span> {@urls.udp_ingest}
-          </p>
-          <p :if={@urls[:udp_ingest_alt]} class="text-base-content/70">
-            <span class="text-base-content/45">alt</span> {@urls.udp_ingest_alt}
-          </p>
+          <.copy_row label="UDP MPEG-TS ingest" value={@urls.udp_ingest} />
+          <.copy_row :if={@urls[:udp_ingest_alt]} label="alt" value={@urls.udp_ingest_alt} />
           <p class="text-xs text-base-content/45">
             Point the drone / encoder at this address (MPEG-TS over UDP). No token on the wire —
             treat the port as a secret and restrict source IPs in the security group when possible.
           </p>
         <% else %>
-          <div class="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-3">
+          <div class="space-y-3 rounded-md border border-primary/25 bg-primary/5 p-3">
             <p class="text-sm font-medium text-primary">Phone → Custom RTMP (DJI Fly / GO)</p>
             <ol class="list-decimal space-y-1 pl-4 text-xs text-base-content/70">
-              <li>On the remote, open the camera view → share / livestream → <strong>Custom RTMP</strong>.</li>
-              <li>Paste the URL below (or use Server + Stream key if the app has two fields).</li>
-              <li>Start livestream. Phone needs LTE/5G or Starlink — video only, no .SRT/KLV.</li>
+              <li>Camera view → share / livestream → <strong>Custom RTMP</strong>.</li>
+              <li>Use <strong>Copy</strong> below (do not hand-select — trailing newlines break DJI).</li>
+              <li>Start livestream over LTE/5G or Starlink. Video only — no .SRT/KLV.</li>
             </ol>
-            <p class="break-all font-mono text-xs text-base-content/90">
-              <span class="text-base-content/50">RTMP URL</span> {@urls.rtmp_ingest}
-            </p>
-            <p :if={@urls[:rtmp_ingest_alt]} class="break-all font-mono text-[0.7rem] text-base-content/60">
-              <span class="text-base-content/45">alt</span> {@urls.rtmp_ingest_alt}
-            </p>
-            <div class="space-y-1 border-t border-base-content/10 pt-2">
+            <.copy_row label="RTMP URL (single field)" value={@urls.rtmp_ingest} />
+            <.copy_row :if={@urls[:rtmp_ingest_alt]} label="alt RTMP URL" value={@urls.rtmp_ingest_alt} />
+            <div class="space-y-2 border-t border-base-content/10 pt-2">
               <p class="text-[0.7rem] uppercase tracking-wide text-base-content/45">
                 Two-field apps (Server + Stream key)
               </p>
-              <p class="break-all font-mono text-xs">
-                <span class="text-base-content/50">Server</span> {@urls.rtmp_dji_server}
-              </p>
-              <p
+              <.copy_row label="Server" value={@urls.rtmp_dji_server} />
+              <.copy_row
                 :if={@urls[:rtmp_dji_server_alt]}
-                class="break-all font-mono text-[0.7rem] text-base-content/60"
-              >
-                <span class="text-base-content/45">alt</span> {@urls.rtmp_dji_server_alt}
-              </p>
-              <p class="break-all font-mono text-xs">
-                <span class="text-base-content/50">Stream key</span> {@urls.rtmp_dji_key}
-              </p>
+                label="alt Server"
+                value={@urls.rtmp_dji_server_alt}
+              />
+              <.copy_row label="Stream key" value={@urls.rtmp_dji_key} />
             </div>
-            <p class="text-xs text-base-content/50">
-              Advanced: RTSP publish <span class="font-mono">{@urls.rtsp_ingest}</span>
-            </p>
+            <.copy_row label="Advanced RTSP publish" value={@urls.rtsp_ingest} />
           </div>
         <% end %>
         <p class="pt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">
           Researchers pull (video)
         </p>
-        <p>
-          <span class="text-base-content/50">RTSP pull</span> {@urls.rtsp_pull}
-        </p>
-        <p :if={@urls.rtsp_pull_alt} class="text-base-content/70">
-          <span class="text-base-content/45">alt</span> {@urls.rtsp_pull_alt}
-        </p>
-        <p><span class="text-base-content/50">RTMP pull</span> {@urls.rtmp_pull}</p>
-        <p :if={@urls.rtmp_pull_alt} class="text-base-content/70">
-          <span class="text-base-content/45">alt</span> {@urls.rtmp_pull_alt}
-        </p>
-        <p><span class="text-base-content/50">SRT pull</span> {@urls.srt_pull}</p>
-        <p :if={@urls.srt_pull_alt} class="text-base-content/70">
-          <span class="text-base-content/45">alt</span> {@urls.srt_pull_alt}
-        </p>
+        <.copy_row label="Browser HLS" value={@urls.hls_pull} />
+        <.copy_row label="RTSP pull" value={@urls.rtsp_pull} />
+        <.copy_row :if={@urls.rtsp_pull_alt} label="alt RTSP" value={@urls.rtsp_pull_alt} />
+        <.copy_row label="RTMP pull" value={@urls.rtmp_pull} />
+        <.copy_row :if={@urls.rtmp_pull_alt} label="alt RTMP" value={@urls.rtmp_pull_alt} />
+        <.copy_row label="SRT pull" value={@urls.srt_pull} />
+        <.copy_row :if={@urls.srt_pull_alt} label="alt SRT" value={@urls.srt_pull_alt} />
         <p class="text-xs text-base-content/45">
           Live phone push is H.264/AAC only — no map telemetry until you upload MP4 + .SRT after landing.
         </p>
@@ -678,6 +656,27 @@ defmodule DroneFeedWeb.CoreComponents do
       <p class="text-xs text-base-content/45">
         Paste the full URL into your tool — access is embedded (treat like a secret link).
       </p>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+
+  defp copy_row(assigns) do
+    ~H"""
+    <div
+      id={"copy-#{:erlang.phash2({@label, @value})}"}
+      class="df-copy-row"
+      phx-hook="CopyField"
+      phx-update="ignore"
+      data-copy-value={@value}
+    >
+      <label class="df-copy-label">{@label}</label>
+      <div class="df-copy-controls">
+        <input type="text" readonly class="df-copy-input" value={@value} />
+        <button type="button" class="btn btn-ghost btn-xs" data-copy-btn>Copy</button>
+      </div>
     </div>
     """
   end

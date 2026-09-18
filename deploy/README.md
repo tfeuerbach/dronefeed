@@ -10,7 +10,7 @@
 | 8554 | TCP | MediaMTX RTSP | Research tools / companion |
 | 8890 | UDP | MediaMTX SRT | Research tools (MPEG-TS + KLV pull) + VOD republish ingest |
 | 8900–8999 | UDP | MediaMTX MPEG-TS ingest | Live drone / encoder UDP feeds |
-| 8888 | TCP | MediaMTX HLS (optional) | Browser / ops |
+| 8888 | TCP | MediaMTX HLS (optional direct) | Browser / ops — UI preview uses HTTPS `/hls/…` via Caddy |
 | 22 | TCP | SSH (or use SSM only) | Ops |
 
 RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
@@ -26,7 +26,7 @@ RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
   `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000`  
   (large `rcvbuf`/`sndbuf` matter for ~100 Mbps 4K.)
 
-**Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only).
+**Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only). The Flights UI plays a same-origin HLS preview at `https://PHX_HOST/hls/live/<id>/index.m3u8` (Caddy → MediaMTX `:8888`). Expect a few seconds of delay (phone keyframe interval + HLS); RTSP/SRT pulls are closer to real time.
 
 KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTSP exposes KLV as a separate RTP/SMPTE336M track (RFC 6597), not as MPEG-TS-in-RTSP. RTMP/FLV cannot carry KLV.
 
