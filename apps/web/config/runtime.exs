@@ -84,6 +84,9 @@ if config_env() == :prod do
     rtsp_port: String.to_integer(System.get_env("RTSP_PORT") || "8554"),
     srt_port: String.to_integer(System.get_env("SRT_PORT") || "8890"),
     hls_port: String.to_integer(System.get_env("HLS_PORT") || "8888"),
+    srt_pull_latency_ms: String.to_integer(System.get_env("SRT_PULL_LATENCY_MS") || "1000"),
+    publish_srt_latency_us:
+      String.to_integer(System.get_env("PUBLISH_SRT_LATENCY_US") || "500000"),
     mediamtx_rtmp_url: System.get_env("MEDIAMTX_RTMP_URL") || "rtmp://mediamtx:1935",
     mediamtx_rtsp_url: System.get_env("MEDIAMTX_RTSP_URL") || "rtsp://mediamtx:8554",
     mediamtx_api_url: System.get_env("MEDIAMTX_API_URL") || "http://mediamtx:9997",

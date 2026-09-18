@@ -89,6 +89,10 @@ config :drone_feed,
   rtsp_port: 8554,
   srt_port: 8890,
   hls_port: 8888,
+  # Haivision/gosrt public pull (ms). Prefer ~1000 on clean WAN; 4000 only if lossy.
+  srt_pull_latency_ms: 1000,
+  # FFmpeg→MediaMTX SRT publish (µs). Docker-local; keep buffers at SRT defaults.
+  publish_srt_latency_us: 500_000,
   web_host: "localhost",
   web_scheme: "http",
   web_port: 4000,

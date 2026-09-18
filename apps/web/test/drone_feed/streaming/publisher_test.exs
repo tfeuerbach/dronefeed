@@ -38,6 +38,9 @@ defmodule DroneFeed.Streaming.PublisherTest do
            end)
 
     assert Enum.any?(args, &String.starts_with?(&1, "srt://"))
-    assert Enum.any?(args, &String.contains?(&1, "latency=4000000"))
+    assert Enum.any?(args, &String.contains?(&1, "latency=500000"))
+    refute Enum.any?(args, &String.contains?(&1, "sndbuf="))
+    refute Enum.any?(args, &String.contains?(&1, "rcvbuf="))
+    refute Enum.any?(args, &String.contains?(&1, "latency=4000000"))
   end
 end

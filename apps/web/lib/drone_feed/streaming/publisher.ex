@@ -291,9 +291,14 @@ defmodule DroneFeed.Streaming.Publisher do
         "1",
         "-f",
         "mpegts",
-        # FFmpeg SRT publish (µs latency + buffers) into MediaMTX.
-        target <> "&latency=4000000&transtype=live&sndbuf=120000000&rcvbuf=120000000"
+        # Docker-local SRT into MediaMTX: modest µs latency, default buffers.
+        # Huge sndbuf/rcvbuf made the outbound stream bursty for remote pullers.
+        target <> "&latency=#{publish_srt_latency_us()}&transtype=live"
       ]
+  end
+
+  defp publish_srt_latency_us do
+    Application.get_env(:drone_feed, :publish_srt_latency_us, 500_000)
   end
 
   # nil height = keep source resolution (still re-encodes for live-style IDRs).

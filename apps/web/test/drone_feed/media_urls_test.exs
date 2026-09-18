@@ -15,9 +15,9 @@ defmodule DroneFeed.MediaURLsTest do
       )
 
     assert url ==
-             "srt://203.0.113.10:8890?streamid=read:vod/#{id}:drone:#{key}&latency=4000"
+             "srt://203.0.113.10:8890?streamid=read:vod/#{id}:drone:#{key}&latency=1000"
 
-    assert url =~ "latency=4000"
+    assert url =~ "latency=1000"
     refute url =~ "4000000"
     refute url =~ "pkt_size"
     refute url =~ "rcvbuf"
@@ -31,7 +31,7 @@ defmodule DroneFeed.MediaURLsTest do
       )
 
     assert live ==
-             "srt://203.0.113.10:8890?streamid=read:live/#{id}:drone:#{key}&latency=4000"
+             "srt://203.0.113.10:8890?streamid=read:live/#{id}:drone:#{key}&latency=1000"
   end
 
   test "internal ffmpeg publish URL keeps pkt_size (not the public pull shape)" do
@@ -41,6 +41,6 @@ defmodule DroneFeed.MediaURLsTest do
 
     assert url =~ "streamid=publish:vod/#{id}:drone:#{key}"
     assert url =~ "pkt_size=1316"
-    refute url =~ "latency=4000"
+    refute url =~ "latency=1000"
   end
 end

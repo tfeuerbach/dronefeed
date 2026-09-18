@@ -124,10 +124,13 @@ defmodule DroneFeed.MediaURLs do
 
   Haivision / MediaMTX (gosrt) URI — `latency` is **milliseconds**.
 
-  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=4000`
+  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=1000`
+
+  Tuned for a reasonably clean WAN (~1s ARQ). Raise via `SRT_PULL_LATENCY_MS`
+  (e.g. 4000) only if you still see SRT stalls on lossy links.
 
   Do not put FFmpeg-only query keys here (`pkt_size`, microsecond `latency`,
-  huge `rcvbuf`/`sndbuf`). Internal FFmpeg publish keeps those separately.
+  `rcvbuf`/`sndbuf`). Internal FFmpeg publish keeps those separately.
   """
   def srt_mpegts_url(kind, id, opts \\ []) do
     host = Keyword.get(opts, :host, media_ip())
@@ -135,6 +138,7 @@ defmodule DroneFeed.MediaURLs do
     include_key = Keyword.get(opts, :include_key, false)
     stream_key = Keyword.get(opts, :stream_key)
     path = stream_path(kind, id)
+    latency_ms = Keyword.get(opts, :latency_ms, srt_pull_latency_ms())
 
     streamid =
       if include_key && stream_key do
@@ -143,7 +147,7 @@ defmodule DroneFeed.MediaURLs do
         "read:#{path}"
       end
 
-    "srt://#{host}:#{port}?streamid=#{streamid}&latency=4000"
+    "srt://#{host}:#{port}?streamid=#{streamid}&latency=#{latency_ms}"
   end
 
   def publish_target(:rtmp, kind, id, stream_key) do
@@ -211,6 +215,10 @@ defmodule DroneFeed.MediaURLs do
   defp rtsp_port, do: Application.fetch_env!(:drone_feed, :rtsp_port)
   defp srt_port, do: Application.get_env(:drone_feed, :srt_port, 8890)
   defp hls_port, do: Application.get_env(:drone_feed, :hls_port, 8888)
+
+  defp srt_pull_latency_ms do
+    Application.get_env(:drone_feed, :srt_pull_latency_ms, 1000)
+  end
 
   defp web_host do
     Application.get_env(:drone_feed, :web_host) || media_domain() || media_ip()
