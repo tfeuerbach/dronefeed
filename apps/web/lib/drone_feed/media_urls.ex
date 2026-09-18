@@ -122,7 +122,9 @@ defmodule DroneFeed.MediaURLs do
   @doc """
   SRT pull URL for MPEG-TS (H.264 + KLV). Auth via MediaMTX streamid.
 
-  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=4000000`
+  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>`
+
+  Client tuning (`latency`, `rcvbuf`, …) is left to the tool — not required for auth.
   """
   def srt_mpegts_url(kind, id, opts \\ []) do
     host = Keyword.get(opts, :host, media_ip())
@@ -138,8 +140,7 @@ defmodule DroneFeed.MediaURLs do
         "read:#{path}"
       end
 
-    # 4s latency + large SRT buffers: 4K ~100Mbps needs >> default 8192-pkt recv queue.
-    "srt://#{host}:#{port}?streamid=#{streamid}&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000"
+    "srt://#{host}:#{port}?streamid=#{streamid}"
   end
 
   def publish_target(:rtmp, kind, id, stream_key) do

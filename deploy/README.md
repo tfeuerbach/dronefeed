@@ -23,8 +23,8 @@ RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 - RTMP (query auth — required by MediaMTX): `rtmp://MEDIA_IP:1935/vod/<id>?user=drone&pass=<key>`
 - RTSP: `rtsp://drone:<key>@MEDIA_IP:8554/vod/<id>`
 - SRT (preferred for H.264+KLV):  
-  `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&pkt_size=1316&latency=4000000&rcvbuf=120000000&sndbuf=120000000`  
-  (large `rcvbuf`/`sndbuf` matter for ~100 Mbps 4K.)
+  `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>`  
+  (For ~100 Mbps 4K with FFmpeg, callers may add their own `latency` / `rcvbuf` / `sndbuf`.)
 
 **Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only). The Flights UI plays a same-origin HLS preview at `https://PHX_HOST/hls/live/<id>/index.m3u8` (Caddy → MediaMTX `:8888`). Expect a few seconds of delay (phone keyframe interval + HLS); RTSP/SRT pulls are closer to real time.
 
