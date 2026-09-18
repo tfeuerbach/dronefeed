@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="signal">
+<html lang="en" data-theme="signal-dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -83,7 +83,7 @@
         if (saved === "signal-dark" || saved === "signal") {
           setTheme(saved);
         } else {
-          setTheme("signal");
+          setTheme("signal-dark");
         }
         window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
       })();
