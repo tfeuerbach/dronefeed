@@ -1,93 +1,52 @@
 /**
- * Page enter/exit motion for #df-page.
+ * Light page enter/exit motion.
  *
- * LiveView keeps the same `id="df-page"` across navigations inside a live_session,
- * so this hook is often updated rather than remounted. Reveal can also fire
- * (page-loading-stop) before the next hook instance is active. Both races used
- * to leave the page stuck on `.df-page-pending` (invisible) after leaving a
- * live preview.
+ * IMPORTANT: never leave the page at opacity 0 waiting on nav races.
+ * LiveView `navigate` fires page-loading start/stop with kind "redirect", and
+ * the replacement main also joins with kind "initial". Those races previously
+ * stuck `.df-page-pending { opacity: 0 }` after leaving a live preview.
  */
 
-let inFlight = false
-let revealToken = 0
 let exitPromise = Promise.resolve()
-/** Set when page-loading-stop runs before a PageMotion hook is active. */
-let revealNeeded = false
 /** @type {object | null} */
 let active = null
 
-const EXIT_MS = 200
-const ENTER_MS = 380
-const FAILSAFE_MS = EXIT_MS + ENTER_MS + 400
+const EXIT_MS = 180
+const ENTER_MS = 320
 
 function isNavKind(kind) {
   return kind === "redirect" || kind === "patch"
 }
 
-function queueReveal() {
-  const token = ++revealToken
-  Promise.resolve(exitPromise).then(() => {
-    queueMicrotask(() => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (token !== revealToken) return
-          inFlight = false
-          if (active) {
-            revealNeeded = false
-            active.enter()
-          } else {
-            // Mount/updated may still be coming for the destination page.
-            revealNeeded = true
-          }
-        })
-      })
-    })
-  })
-}
-
 window.addEventListener("phx:page-loading-start", ({ detail }) => {
   if (!isNavKind(detail?.kind)) return
-  inFlight = true
-  revealNeeded = false
-  revealToken++
   active?.prepare()
 })
 
 window.addEventListener("phx:page-loading-stop", ({ detail }) => {
-  if (!isNavKind(detail?.kind)) return
-  queueReveal()
+  if (!isNavKind(detail?.kind) && detail?.kind !== "initial") return
+  // Destination page must be visible even if enter animation is skipped.
+  Promise.resolve(exitPromise).then(() => {
+    queueMicrotask(() => active?.reveal())
+  })
 })
 
 export const PageMotion = {
   mounted() {
     this._reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    this._phase = "pending"
     active = this
-
-    if (this._reduced) {
-      revealNeeded = false
-      this.show()
-      return
-    }
-
-    if (revealNeeded || !inFlight) {
-      revealNeeded = false
-      this.enter()
-    } else {
-      this.holdPending()
-    }
-
-    this.armFailsafe()
+    // Always visible on mount — never holdPending/opacity 0 across navigations.
+    this.reveal()
   },
 
   updated() {
-    // Same DOM node reused across LiveView navigations — apply owed reveal.
-    if (revealNeeded && !inFlight) {
-      revealNeeded = false
-      this.enter()
-      return
+    // Server HEEX resets class to df-page-pending; keep content visible.
+    if (
+      this.el.classList.contains("df-page-pending") &&
+      !this.el.classList.contains("df-page-exit")
+    ) {
+      this.reveal()
     }
-    this.restore()
   },
 
   destroyed() {
@@ -96,22 +55,7 @@ export const PageMotion = {
     this.clearTimers()
   },
 
-  armFailsafe() {
-    if (this._failsafe) clearTimeout(this._failsafe)
-    this._failsafe = window.setTimeout(() => {
-      if (this._phase !== "shown") this.show()
-    }, FAILSAFE_MS)
-  },
-
   clearTimers() {
-    if (this._raf) cancelAnimationFrame(this._raf)
-    this._raf = null
-    if (this._failsafe) clearTimeout(this._failsafe)
-    this._failsafe = null
-    this.clearAnimOnly()
-  },
-
-  clearAnimOnly() {
     if (this._raf) cancelAnimationFrame(this._raf)
     this._raf = null
     if (this._animFallback) clearTimeout(this._animFallback)
@@ -131,13 +75,6 @@ export const PageMotion = {
     )
   },
 
-  holdPending() {
-    this._phase = "pending"
-    this.clearAnimOnly()
-    this.stripMotionClasses()
-    this.el.classList.add("df-page-pending")
-  },
-
   finishExit() {
     if (this._resolveExit) {
       const resolve = this._resolveExit
@@ -146,47 +83,22 @@ export const PageMotion = {
     }
   },
 
-  restore() {
-    if (this._phase === "exit") {
-      if (this.el.classList.contains("df-page-exit")) return
-      this.stripMotionClasses()
-      this.el.classList.add("df-page-exit")
-      return
-    }
-
-    if (this._phase === "pending" || inFlight) {
-      if (this.el.classList.contains("df-page-pending")) return
-      this.stripMotionClasses()
-      this.el.classList.add("df-page-pending")
-      return
-    }
-
-    if (this._phase === "enter") {
-      if (this.el.classList.contains("df-page-enter")) return
-      this.stripMotionClasses()
-      this.el.classList.add("df-page-enter")
-      return
-    }
-
-    if (!this.el.classList.contains("df-page-shown")) {
-      this.stripMotionClasses()
-      this.el.classList.add("df-page-shown")
-    }
+  /** Make the page visible. Prefer instant show; light enter is optional. */
+  reveal() {
+    this.finishExit()
+    this.clearTimers()
+    this.stripMotionClasses()
+    this.el.classList.add("df-page-shown")
   },
 
   prepare() {
-    if (this._phase === "pending" || this._phase === "exit") {
-      this.holdPending()
-      return
-    }
-
     if (this._reduced) {
-      this.holdPending()
+      this.stripMotionClasses()
+      this.el.classList.add("df-page-shown")
       return
     }
 
-    this._phase = "exit"
-    this.clearAnimOnly()
+    this.clearTimers()
     this.stripMotionClasses()
     this.el.classList.add("df-page-exit")
 
@@ -195,78 +107,18 @@ export const PageMotion = {
     })
 
     const finish = () => {
-      if (this._phase !== "exit") return
-      this.holdPending()
+      // Stay visible during handoff — do not force opacity 0.
+      this.stripMotionClasses()
+      this.el.classList.add("df-page-shown")
       this.finishExit()
+      this.clearTimers()
     }
 
     this._onEnd = (event) => {
       if (event.target !== this.el || event.animationName !== "df-page-exit") return
       finish()
     }
-
     this.el.addEventListener("animationend", this._onEnd)
     this._animFallback = window.setTimeout(finish, EXIT_MS + 40)
-  },
-
-  show() {
-    this._phase = "shown"
-    inFlight = false
-    revealNeeded = false
-    this.finishExit()
-    this.clearAnimOnly()
-    this.stripMotionClasses()
-    this.el.classList.add("df-page-shown")
-  },
-
-  enter() {
-    if (this._reduced) {
-      this.show()
-      return
-    }
-
-    if (this._phase === "enter" || this._phase === "shown") return
-
-    if (this._phase === "exit") {
-      this.holdPending()
-      this.finishExit()
-    }
-
-    this._phase = "pending"
-    this.clearAnimOnly()
-    this.stripMotionClasses()
-    this.el.classList.add("df-page-pending")
-    this.armFailsafe()
-
-    this._raf = requestAnimationFrame(() => {
-      this._raf = requestAnimationFrame(() => {
-        this._phase = "enter"
-        this.el.classList.remove("df-page-pending")
-        this.el.classList.add("df-page-enter")
-
-        const finish = () => {
-          if (this._phase !== "enter") return
-          this._phase = "shown"
-          this.el.classList.add("df-page-shown")
-          this.el.classList.remove("df-page-enter")
-          if (this._onEnd) {
-            this.el.removeEventListener("animationend", this._onEnd)
-            this._onEnd = null
-          }
-          if (this._animFallback) {
-            clearTimeout(this._animFallback)
-            this._animFallback = null
-          }
-        }
-
-        this._onEnd = (event) => {
-          if (event.target !== this.el || event.animationName !== "df-page-enter") return
-          finish()
-        }
-
-        this.el.addEventListener("animationend", this._onEnd)
-        this._animFallback = window.setTimeout(finish, ENTER_MS + 40)
-      })
-    })
   },
 }

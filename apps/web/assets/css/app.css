@@ -921,9 +921,11 @@ body {
 }
 
 .df-page.df-page-pending {
+  /* Must stay visible — used only as an enter-animation starting point.
+     Hiding here previously left Flights blank after leaving /live/:id. */
   animation: none;
-  opacity: 0;
-  transform: translate3d(0, 10px, 0);
+  opacity: 1;
+  transform: none;
 }
 
 .df-page.df-page-exit {
