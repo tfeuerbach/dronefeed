@@ -5,7 +5,6 @@ import {hooks as colocatedHooks} from "phoenix-colocated/drone_feed"
 import topbar from "../vendor/topbar"
 import {FlightDeck} from "./hooks/flight_deck"
 import {FlightTerminal} from "./hooks/flight_terminal"
-import {PageMotion} from "./hooks/page_motion"
 import {LocationSuggest} from "./hooks/location_suggest"
 import {PasswordReveal} from "./hooks/password_reveal"
 import {LiveHlsPreview} from "./hooks/live_hls_preview"
@@ -19,7 +18,6 @@ const liveSocket = new LiveSocket("/live", Socket, {
     ...colocatedHooks,
     FlightDeck,
     FlightTerminal,
-    PageMotion,
     LocationSuggest,
     PasswordReveal,
     LiveHlsPreview,

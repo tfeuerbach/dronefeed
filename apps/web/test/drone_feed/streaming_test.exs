@@ -10,6 +10,7 @@ defmodule DroneFeed.StreamingTest do
   test "creates push live session by default", %{scope: scope} do
     assert {:ok, session} = Streaming.create_live_session(scope, %{"name" => "Pad"})
     assert session.ingest_mode == "push"
+    assert session.publishing == false
     assert is_nil(session.udp_port)
     urls = Streaming.urls(session)
     assert urls.rtmp_ingest =~ "rtmp://"
@@ -27,6 +28,22 @@ defmodule DroneFeed.StreamingTest do
     refute urls.srt_pull =~ "rcvbuf"
     refute Map.has_key?(urls, :stream_key)
     assert is_nil(urls.udp_ingest)
+  end
+
+  test "set_publishing toggles public feed for owner only", %{scope: scope} do
+    other = DroneFeed.AccountsFixtures.user_scope_fixture()
+    assert {:ok, session} = Streaming.create_live_session(scope, %{"name" => "Pad"})
+    refute session.publishing
+    assert Streaming.list_published_live_sessions(scope) == []
+
+    assert {:ok, on} = Streaming.set_publishing(scope, session.id, true)
+    assert on.publishing
+    assert Enum.map(Streaming.list_published_live_sessions(scope), & &1.id) == [on.id]
+
+    assert {:error, :forbidden} = Streaming.set_publishing(other, session.id, false)
+
+    assert {:ok, off} = Streaming.set_publishing(scope, session.id, false)
+    refute off.publishing
   end
 
 

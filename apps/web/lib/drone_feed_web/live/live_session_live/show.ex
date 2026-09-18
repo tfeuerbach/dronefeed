@@ -10,14 +10,14 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
       <div class="df-flight-page">
         <header class="df-flight-header">
           <div class="min-w-0 space-y-1.5">
-            <.link
-              navigate={~p"/flights"}
+            <a
+              href={~p"/flights"}
               class="text-sm text-base-content/50 transition-colors hover:text-base-content"
             >
               ← Flights
-            </.link>
+            </a>
             <div class="flex flex-wrap items-center gap-3">
-              <span class="df-live-dot" title="Live session"></span>
+              <span :if={@session.publishing} class="df-live-dot" title="Public feed"></span>
               <h1 class="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
                 {@session.name}
               </h1>
@@ -32,6 +32,18 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
           </div>
 
           <div class="df-flight-header-actions">
+            <label :if={@owner?} class="df-publish-toggle">
+              <span>Public feed</span>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary"
+                checked={@session.publishing}
+                phx-click="toggle_publish"
+              />
+            </label>
+            <p :if={!@owner? and @session.publishing} class="text-sm text-base-content/50">
+              Public · pull endpoints below
+            </p>
             <button
               :if={@can_end?}
               type="button"
@@ -47,6 +59,7 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
         <div class="df-flight-deck df-live-deck">
           <section class="df-flight-stage">
             <div
+              :if={@session.publishing}
               id={"live-preview-#{@session.id}"}
               class="df-flight-player"
               phx-hook="LiveHlsPreview"
@@ -66,7 +79,21 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
               </video>
               <p class="df-live-preview-status" data-live-status hidden></p>
             </div>
-            <p class="mt-2 text-xs text-base-content/50">
+            <div
+              :if={!@session.publishing}
+              class="df-flight-player flex items-center justify-center bg-base-200/40"
+            >
+              <p class="max-w-md px-6 text-center text-sm text-base-content/60">
+                <%= if @owner? do %>
+                  Enable <span class="font-medium">Public feed</span>
+                  to allow researchers to pull and to show the in-browser preview.
+                  You can still push from the phone / encoder using the ingest URLs below.
+                <% else %>
+                  Public feed is off — pull endpoints are not available yet.
+                <% end %>
+              </p>
+            </div>
+            <p :if={@session.publishing} class="mt-2 text-xs text-base-content/50">
               In-browser preview uses low-latency HLS (typically a few seconds behind; phone
               keyframe interval sets a floor). Research tools should pull RTSP/SRT for lower delay.
               Phone RTMP is video/AAC only — no map telemetry on this path.
@@ -77,7 +104,7 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
             <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/50">
               Connect / pull
             </h2>
-            <.stream_pull_urls urls={@urls} kind={:live} />
+            <.stream_pull_urls urls={@urls} kind={:live} show_pull={@session.publishing} />
           </section>
         </div>
       </div>
@@ -108,6 +135,25 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
   end
 
   @impl true
+  def handle_event("toggle_publish", _params, socket) do
+    scope = socket.assigns.current_scope
+    session = socket.assigns.session
+
+    case Streaming.set_publishing(scope, session.id, !session.publishing) do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:session, updated)
+         |> assign(:urls, Streaming.urls(updated))}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only the session owner can change public feed access")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not update public feed: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("end_live", _params, socket) do
     scope = socket.assigns.current_scope
 

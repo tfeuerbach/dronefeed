@@ -72,6 +72,24 @@ defmodule DroneFeed.Streaming.MediaAuthTest do
                "password" => session.stream_key
              })
 
+    assert {:error, :forbidden} =
+             MediaAuth.authorize(%{
+               "action" => "read",
+               "path" => "live/#{session.id}",
+               "user" => "drone",
+               "password" => session.stream_key
+             })
+
+    {:ok, session} = Streaming.set_publishing(scope, session.id, true)
+
+    assert :ok =
+             MediaAuth.authorize(%{
+               "action" => "read",
+               "path" => "live/#{session.id}",
+               "user" => "drone",
+               "password" => session.stream_key
+             })
+
     {:ok, _} = Streaming.end_live_session(scope, session.id)
 
     assert {:error, :forbidden} =

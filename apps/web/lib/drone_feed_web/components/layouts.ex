@@ -13,8 +13,7 @@ defmodule DroneFeedWeb.Layouts do
 
   def app(assigns) do
     assigns =
-      assigns
-      |> assign_new(:admin_unread, fn ->
+      assign_new(assigns, :admin_unread, fn ->
         user = assigns[:current_scope] && assigns.current_scope.user
 
         if user && DroneFeed.Accounts.User.admin?(user) do
@@ -23,7 +22,6 @@ defmodule DroneFeedWeb.Layouts do
           0
         end
       end)
-      |> assign(:page_motion_id, page_motion_id(assigns[:main_class]))
 
     ~H"""
     <div class="df-shell">
@@ -45,12 +43,12 @@ defmodule DroneFeedWeb.Layouts do
 
           <nav class="flex items-center gap-1 sm:gap-2">
             <%= if @current_scope do %>
-              <.link navigate={~p"/flights"} class="btn btn-ghost btn-sm font-medium">
+              <a href={~p"/flights"} class="btn btn-ghost btn-sm font-medium">
                 Flights
-              </.link>
-              <.link navigate={~p"/flights/public"} class="btn btn-ghost btn-sm font-medium">
+              </a>
+              <a href={~p"/flights/public"} class="btn btn-ghost btn-sm font-medium">
                 Public Feeds
-              </.link>
+              </a>
 
               <div class="mx-1 hidden h-4 w-px bg-base-content/15 sm:block" />
 
@@ -89,7 +87,7 @@ defmodule DroneFeedWeb.Layouts do
       </header>
 
       <main class={["df-main", @main_class]}>
-        <div id={@page_motion_id} class="df-page df-page-pending" phx-hook="PageMotion">
+        <div class="df-page df-page-shown">
           {render_slot(@inner_block)}
         </div>
       </main>
@@ -97,21 +95,6 @@ defmodule DroneFeedWeb.Layouts do
       <.flash_group flash={@flash} />
     </div>
     """
-  end
-
-  # Distinct ids force PageMotion to remount when leaving theater (live/flight
-  # detail) back to the Flights list — avoids a stuck opacity:0 page.
-  defp page_motion_id(nil), do: "df-page"
-  defp page_motion_id(""), do: "df-page"
-
-  defp page_motion_id(main_class) when is_binary(main_class) do
-    suffix =
-      main_class
-      |> String.split(~r/\s+/, trim: true)
-      |> Enum.map(&String.replace(&1, ~r/[^a-zA-Z0-9_-]/, "-"))
-      |> Enum.join("-")
-
-    if suffix == "", do: "df-page", else: "df-page-#{suffix}"
   end
 
   attr :flash, :map, required: true

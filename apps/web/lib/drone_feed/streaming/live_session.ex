@@ -10,6 +10,7 @@ defmodule DroneFeed.Streaming.LiveSession do
     field :name, :string
     field :stream_key, :string
     field :active, :boolean, default: true
+    field :publishing, :boolean, default: false
     field :ingest_mode, :string, default: "push"
     field :udp_port, :integer
 
@@ -22,12 +23,16 @@ defmodule DroneFeed.Streaming.LiveSession do
 
   def changeset(session, attrs) do
     session
-    |> cast(attrs, [:name, :stream_key, :active, :user_id, :ingest_mode, :udp_port])
+    |> cast(attrs, [:name, :stream_key, :active, :publishing, :user_id, :ingest_mode, :udp_port])
     |> validate_required([:name, :stream_key, :user_id, :ingest_mode])
     |> validate_inclusion(:ingest_mode, @ingest_modes)
     |> validate_udp_port()
     |> unique_constraint(:stream_key)
     |> unique_constraint(:udp_port, name: :live_sessions_active_udp_port_index)
+  end
+
+  def publish_changeset(session, publishing) when is_boolean(publishing) do
+    change(session, publishing: publishing)
   end
 
   defp validate_udp_port(changeset) do

@@ -27,6 +27,17 @@ defmodule DroneFeed.Streaming do
     |> Repo.all()
   end
 
+  @doc """
+  Active live sessions with Public feed on (shared gallery).
+  """
+  def list_published_live_sessions(%Scope{}) do
+    LiveSession
+    |> where([s], s.active == true and s.publishing == true)
+    |> order_by([s], desc: s.inserted_at)
+    |> preload(:user)
+    |> Repo.all()
+  end
+
   def get_live_session!(%Scope{}, id) do
     LiveSession
     |> where([s], s.id == ^id)
@@ -64,6 +75,33 @@ defmodule DroneFeed.Streaming do
   def can_end?(%Scope{user: %{role: "admin"}}, %LiveSession{}), do: true
   def can_end?(%Scope{} = scope, %LiveSession{} = session), do: owns?(scope, session)
 
+  @doc """
+  Owner-only Public feed toggle for live sessions.
+
+  When off, MediaMTX still accepts drone **publish**, but **read/playback**
+  (SRT/RTSP/RTMP/HLS pull) is denied — same shape as recorded flights.
+  """
+  def set_publishing(%Scope{} = scope, session_id, publishing) when is_boolean(publishing) do
+    session = get_live_session!(scope, session_id)
+
+    cond do
+      not owns?(scope, session) ->
+        {:error, :forbidden}
+
+      not session.active ->
+        {:error, :inactive}
+
+      true ->
+        session
+        |> LiveSession.publish_changeset(publishing)
+        |> Repo.update()
+        |> case do
+          {:ok, updated} -> {:ok, Repo.preload(updated, :user)}
+          other -> other
+        end
+    end
+  end
+
   def create_live_session(%Scope{user: user}, attrs) do
     mode = ingest_mode_from_attrs(attrs)
 
@@ -74,6 +112,7 @@ defmodule DroneFeed.Streaming do
           |> Map.put("user_id", user.id)
           |> Map.put("stream_key", generate_stream_key())
           |> Map.put("active", true)
+          |> Map.put("publishing", false)
           |> Map.put("ingest_mode", mode)
           |> Map.merge(port_attrs)
 

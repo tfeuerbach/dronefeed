@@ -56,8 +56,16 @@ defmodule DroneFeed.Streaming.MediaAuth do
 
   defp authorize_live(action, id, password) do
     case fetch_live_session(id) do
-      %{active: true, stream_key: ^password} when action in ["publish", "read", "playback"] ->
+      # Drone / encoder may publish into an active session before Public feed is on.
+      %{active: true, stream_key: ^password} when action == "publish" ->
         :ok
+
+      %{active: true, publishing: true, stream_key: ^password}
+      when action in ["read", "playback"] ->
+        :ok
+
+      %{active: true, publishing: false} when action in ["read", "playback"] ->
+        {:error, :forbidden}
 
       %{active: true} ->
         {:error, :forbidden}

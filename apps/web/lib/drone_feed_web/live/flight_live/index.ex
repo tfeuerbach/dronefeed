@@ -131,7 +131,12 @@ defmodule DroneFeedWeb.FlightLive.Index do
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0 space-y-1">
                   <div class="flex items-center gap-2">
-                    <span class="df-live-dot" title="Live session"></span>
+                    <span
+                      :if={session.publishing}
+                      class="df-live-dot"
+                      title="Public feed"
+                    >
+                    </span>
                     <.link
                       navigate={~p"/live/#{session.id}"}
                       class="truncate font-medium hover:text-primary"
@@ -150,6 +155,19 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   <.link navigate={~p"/live/#{session.id}"} class="btn btn-ghost btn-sm">
                     Open
                   </.link>
+                  <label
+                    :if={Streaming.owns?(@current_scope, session)}
+                    class="flex cursor-pointer items-center gap-2 text-sm"
+                  >
+                    <span class="text-base-content/70">Public feed</span>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-primary toggle-sm"
+                      checked={session.publishing}
+                      phx-click="toggle_live_publish"
+                      phx-value-id={session.id}
+                    />
+                  </label>
                   <button
                     :if={Streaming.can_end?(@current_scope, session)}
                     type="button"
@@ -161,6 +179,13 @@ defmodule DroneFeedWeb.FlightLive.Index do
                     End
                   </button>
                 </div>
+              </div>
+              <div :if={session.publishing} class="mt-3">
+                <.stream_pull_urls
+                  urls={Streaming.urls(session)}
+                  kind={:live}
+                  show_pull={true}
+                />
               </div>
             </li>
           </ul>
@@ -363,6 +388,25 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not end session: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("toggle_live_publish", %{"id" => id}, socket) do
+    scope = socket.assigns.current_scope
+    session = Streaming.get_live_session!(scope, id)
+
+    case Streaming.set_publishing(scope, id, !session.publishing) do
+      {:ok, _} ->
+        {:noreply, assign(socket, sessions: Streaming.list_live_sessions(scope))}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only the session owner can change public feed access")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Could not update public feed: #{inspect(reason)}")
+         |> assign(sessions: Streaming.list_live_sessions(scope))}
     end
   end
 

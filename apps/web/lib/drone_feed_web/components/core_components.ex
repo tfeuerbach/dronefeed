@@ -571,6 +571,7 @@ defmodule DroneFeedWeb.CoreComponents do
   """
   attr :urls, :map, required: true
   attr :kind, :atom, default: :flight, values: [:flight, :live]
+  attr :show_pull, :boolean, default: true
 
   def stream_pull_urls(assigns) do
     ~H"""
@@ -639,19 +640,26 @@ defmodule DroneFeedWeb.CoreComponents do
             <.copy_row label="Advanced RTSP publish" value={@urls.rtsp_ingest} />
           </div>
         <% end %>
-        <p class="pt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">
-          Researchers pull (video)
-        </p>
-        <.copy_row label="Browser HLS" value={@urls.hls_pull} />
-        <.copy_row label="RTSP pull" value={@urls.rtsp_pull} />
-        <.copy_row :if={@urls.rtsp_pull_alt} label="alt RTSP" value={@urls.rtsp_pull_alt} />
-        <.copy_row label="RTMP pull" value={@urls.rtmp_pull} />
-        <.copy_row :if={@urls.rtmp_pull_alt} label="alt RTMP" value={@urls.rtmp_pull_alt} />
-        <.copy_row label="SRT pull" value={@urls.srt_pull} />
-        <.copy_row :if={@urls.srt_pull_alt} label="alt SRT" value={@urls.srt_pull_alt} />
-        <p class="text-xs text-base-content/45">
-          Live phone push is H.264/AAC only — no map telemetry until you upload MP4 + .SRT after landing.
-        </p>
+        <%= if @show_pull do %>
+          <p class="pt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">
+            Researchers pull (video)
+          </p>
+          <.copy_row label="Browser HLS" value={@urls.hls_pull} />
+          <.copy_row label="RTSP pull" value={@urls.rtsp_pull} />
+          <.copy_row :if={@urls.rtsp_pull_alt} label="alt RTSP" value={@urls.rtsp_pull_alt} />
+          <.copy_row label="RTMP pull" value={@urls.rtmp_pull} />
+          <.copy_row :if={@urls.rtmp_pull_alt} label="alt RTMP" value={@urls.rtmp_pull_alt} />
+          <.copy_row label="SRT pull" value={@urls.srt_pull} />
+          <.copy_row :if={@urls.srt_pull_alt} label="alt SRT" value={@urls.srt_pull_alt} />
+          <p class="text-xs text-base-content/45">
+            Live phone push is H.264/AAC only — no map telemetry until you upload MP4 + .SRT after landing.
+          </p>
+        <% else %>
+          <p class="pt-2 text-xs text-base-content/55">
+            Public feed is off — turn it on to expose pull URLs and in-browser preview.
+            Ingest above still works for the owner.
+          </p>
+        <% end %>
       <% end %>
       <p class="text-xs text-base-content/45">
         Paste the full URL into your tool — access is embedded (treat like a secret link).
