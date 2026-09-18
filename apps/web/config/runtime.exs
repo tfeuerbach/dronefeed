@@ -99,7 +99,14 @@ if config_env() == :prod do
     mux_script: System.get_env("MUX_SCRIPT") || "/app/scripts/mux_to_stanag.py",
     extract_klv_script:
       System.get_env("EXTRACT_KLV_SCRIPT") || "/app/scripts/extract_klv_track.py",
-    python_path: System.get_env("PYTHON_PATH") || System.find_executable("python3") || "python3"
+    python_path: System.get_env("PYTHON_PATH") || System.find_executable("python3") || "python3",
+    publish_video_height: System.get_env("PUBLISH_VIDEO_HEIGHT") || "1080",
+    publish_video_bitrate: System.get_env("PUBLISH_VIDEO_BITRATE") || "6M",
+    publish_video_maxrate: System.get_env("PUBLISH_VIDEO_MAXRATE") || "8M",
+    publish_video_bufsize: System.get_env("PUBLISH_VIDEO_BUFSIZE") || "4M",
+    publish_gop: System.get_env("PUBLISH_GOP") || "30",
+    publish_x264_preset: System.get_env("PUBLISH_X264_PRESET") || "veryfast",
+    publish_x264_profile: System.get_env("PUBLISH_X264_PROFILE") || "main"
 
   database_url =
     System.get_env("DATABASE_URL") ||

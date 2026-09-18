@@ -14,7 +14,8 @@
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
 - **MediaMTX** — SRT `:8890` (MPEG-TS + KLV ingest/pull), RTSP `:8554`, RTMP `:1935`; UDP `:8900–8999` for live drone ingest
-- **FFmpeg** — loops recorded STANAG TS into MediaMTX over **SRT** when Public feed is on
+- **FFmpeg** — when Public feed is on, loops a live-style 1080p Main H.264 + KLV
+  MPEG-TS into MediaMTX over **SRT** (distribution encode; full-quality source stays on disk)
 - **Caddy** — HTTPS (Let's Encrypt) in front of Phoenix
 - **Postgres** — users, flights, live sessions
 

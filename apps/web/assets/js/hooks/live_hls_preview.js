@@ -43,7 +43,11 @@ export const LiveHlsPreview = {
 
   destroyed() {
     this.destroyed = true
-    this.teardown()
+    try {
+      this.teardown()
+    } catch (_e) {
+      // Never let player cleanup abort LiveView navigation morphs.
+    }
   },
 
   start() {
@@ -186,12 +190,20 @@ export const LiveHlsPreview = {
       this.edgeTimer = null
     }
     if (this.hls) {
-      this.hls.destroy()
+      try {
+        this.hls.destroy()
+      } catch (_e) {}
       this.hls = null
     }
     if (this.video) {
-      this.video.removeAttribute("src")
-      this.video.load()
+      try {
+        this.video.pause()
+      } catch (_e) {}
+      try {
+        this.video.removeAttribute("src")
+        this.video.removeAttribute("srcObject")
+        this.video.load()
+      } catch (_e) {}
     }
   },
 }

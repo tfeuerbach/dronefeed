@@ -15,7 +15,11 @@
 
 RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 
-- **Recorded Public feed** republishes over **SRT** into MediaMTX (`publish:vod/<id>`), then re-serves SRT/RTSP/RTMP pull.
+- **Recorded Public feed** loops a **live-style distribution encode** (default
+  1080p Main H.264, IDR ~1s, KLV copied) over **SRT** into MediaMTX
+  (`publish:vod/<id>`), then re-serves SRT/RTSP/RTMP/HLS. Full-quality source
+  stays on disk; `-c copy` of 4K High into MediaMTX is avoided because SRT/HLS
+  remux often yields H264 with no SPS/PPS (`0×0`) and players hang on Connecting.
 - **Live Drone UDP** uses ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999), one port per session.
 
 **Pull access:** capability URLs only (token embedded). Copy from the UI; do not ask tools for a separate username/password.
@@ -35,7 +39,10 @@ Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates 
 
 ## Minimum instance (architecture)
 
-4K FMV republish is often **~80–110 Mbps** with `-c copy`. MediaMTX demuxes/remuxes that bitrate for every SRT/RTSP reader. Undersized hosts peg CPU, starve write queues, and clients see **EOF after tens of seconds** even though auth and track ads succeed.
+Public feed defaults to a ~6 Mbps 1080p encode (see `PUBLISH_VIDEO_*` env). That
+keeps MediaMTX remux / Gladius HLS healthy. Raising `PUBLISH_VIDEO_HEIGHT=0`
+(source resolution) still re-encodes for IDRs; do not expect `-c copy` 4K to be
+playable over SRT/HLS on MediaMTX.
 
 | Workload | Minimum | Notes |
 |----------|---------|--------|
@@ -54,7 +61,7 @@ sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456 \
   net.core.rmem_default=16777216 net.core.wmem_default=16777216
 ```
 
-`mediamtx.yml` sets `udpReadBufferSize: 16777216` and `writeQueueSize: 65536` (power of two) for high-bitrate SRT. Prefer remux (`-c copy`); do not re-encode 4K on the same box unless you have spare CPU.
+`mediamtx.yml` sets `udpReadBufferSize: 16777216` and `writeQueueSize: 65536` (power of two) for high-bitrate SRT. Public VOD uses a distribution encode by design.
 
 Prefer **NLB** (or SG on the instance) for 1935/8554/8890 — ALB is HTTP/HTTPS-oriented and is a poor fit for raw RTMP/RTSP/SRT.
 

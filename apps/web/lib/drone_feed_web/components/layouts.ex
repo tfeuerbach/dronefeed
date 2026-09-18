@@ -13,7 +13,8 @@ defmodule DroneFeedWeb.Layouts do
 
   def app(assigns) do
     assigns =
-      assign_new(assigns, :admin_unread, fn ->
+      assigns
+      |> assign_new(:admin_unread, fn ->
         user = assigns[:current_scope] && assigns.current_scope.user
 
         if user && DroneFeed.Accounts.User.admin?(user) do
@@ -22,6 +23,7 @@ defmodule DroneFeedWeb.Layouts do
           0
         end
       end)
+      |> assign(:page_motion_id, page_motion_id(assigns[:main_class]))
 
     ~H"""
     <div class="df-shell">
@@ -87,7 +89,7 @@ defmodule DroneFeedWeb.Layouts do
       </header>
 
       <main class={["df-main", @main_class]}>
-        <div id="df-page" class="df-page df-page-pending" phx-hook="PageMotion">
+        <div id={@page_motion_id} class="df-page df-page-pending" phx-hook="PageMotion">
           {render_slot(@inner_block)}
         </div>
       </main>
@@ -95,6 +97,21 @@ defmodule DroneFeedWeb.Layouts do
       <.flash_group flash={@flash} />
     </div>
     """
+  end
+
+  # Distinct ids force PageMotion to remount when leaving theater (live/flight
+  # detail) back to the Flights list — avoids a stuck opacity:0 page.
+  defp page_motion_id(nil), do: "df-page"
+  defp page_motion_id(""), do: "df-page"
+
+  defp page_motion_id(main_class) when is_binary(main_class) do
+    suffix =
+      main_class
+      |> String.split(~r/\s+/, trim: true)
+      |> Enum.map(&String.replace(&1, ~r/[^a-zA-Z0-9_-]/, "-"))
+      |> Enum.join("-")
+
+    if suffix == "", do: "df-page", else: "df-page-#{suffix}"
   end
 
   attr :flash, :map, required: true

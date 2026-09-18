@@ -1,13 +1,16 @@
 defmodule DroneFeed.Streaming.Publisher do
   @moduledoc """
-  Republishes a recorded flight as a unified STANAG-style MPEG-TS feed.
+  Republishes a recorded flight as a live-style MPEG-TS feed for MediaMTX.
 
-  Both consumer DJI (MP4 + SRT) and enterprise TS+KLV are normalized via
-  `StanagMux` into `publish_stanag.ts`, then FFmpeg loops the full TS
-  (including MISB KLV) into MediaMTX over **SRT** (`publish:vod/<id>`).
+  Source assets are normalized via `StanagMux` into `publish_stanag.ts` (full
+  quality H.264 + MISB KLV). The Public feed **does not** `-c copy` that file
+  into MediaMTX: MediaMTX's SRT/HLS remux of high-bitrate High-profile 4K copy
+  often advertises H264 with empty SPS/PPS (`0×0` / unspecified size), so
+  Gladius and other HLS clients sit on Connecting forever.
 
-  MediaMTX re-serves that path as SRT/RTSP/RTMP for pull clients. SRT is used
-  for ingest (not UDP) so loop seeks and high bitrate do not gap the source.
+  Instead FFmpeg loops a **distribution encode**: Main (or Baseline) Annex-B
+  H.264 with SPS/PPS on IDRs about every 1–2s, default 1080p, and copies the
+  KLV data track. MediaMTX re-serves that as SRT/RTSP/RTMP/HLS.
   """
 
   use GenServer
@@ -213,8 +216,23 @@ defmodule DroneFeed.Streaming.Publisher do
 
   defp open_one(_flight, _ts_path, _label), do: nil
 
-  defp mpegts_srt_args(%Flight{} = flight, ts_path) do
+  @doc false
+  def mpegts_srt_args(%Flight{} = flight, ts_path) do
     target = MediaURLs.publish_srt_mpegts_url(:vod, flight.id, flight.stream_key)
+    height = publish_height()
+    bitrate = publish_video_bitrate()
+    maxrate = publish_video_maxrate()
+    bufsize = publish_video_bufsize()
+    gop = publish_gop()
+    preset = publish_x264_preset()
+    profile = publish_x264_profile()
+
+    scale_filter =
+      if height do
+        ["-vf", "scale=-2:#{height}"]
+      else
+        []
+      end
 
     [
       "-hide_banner",
@@ -232,21 +250,95 @@ defmodule DroneFeed.Streaming.Publisher do
       "-i",
       ts_path,
       "-map",
-      "0",
-      "-c",
-      "copy",
-      "-muxdelay",
-      "0",
-      "-muxpreload",
-      "0",
-      "-flush_packets",
-      "1",
-      "-f",
-      "mpegts",
-      # Live SRT: latency + large buffers for ~100Mbps 4K.
-      target <> "&latency=4000000&transtype=live&sndbuf=120000000&rcvbuf=120000000"
-    ]
+      "0:v:0",
+      "-map",
+      "0:d:0?",
+      "-c:v",
+      "libx264",
+      "-preset",
+      preset,
+      "-tune",
+      "zerolatency",
+      "-profile:v",
+      profile,
+      "-pix_fmt",
+      "yuv420p"
+    ] ++
+      scale_filter ++
+      [
+        "-b:v",
+        bitrate,
+        "-maxrate",
+        maxrate,
+        "-bufsize",
+        bufsize,
+        # IDR ~1–2s so MediaMTX HLS / late SRT joiners get SPS/PPS + keyframe.
+        "-g",
+        Integer.to_string(gop),
+        "-keyint_min",
+        Integer.to_string(gop),
+        "-sc_threshold",
+        "0",
+        "-bf",
+        "0",
+        "-c:d",
+        "copy",
+        "-muxdelay",
+        "0",
+        "-muxpreload",
+        "0",
+        "-flush_packets",
+        "1",
+        "-f",
+        "mpegts",
+        # FFmpeg SRT publish (µs latency + buffers) into MediaMTX.
+        target <> "&latency=4000000&transtype=live&sndbuf=120000000&rcvbuf=120000000"
+      ]
   end
+
+  # nil height = keep source resolution (still re-encodes for live-style IDRs).
+  defp publish_height do
+    case Application.get_env(:drone_feed, :publish_video_height, 1080) do
+      nil -> nil
+      0 -> nil
+      "0" -> nil
+      "source" -> nil
+      h when is_integer(h) and h > 0 -> h
+      h when is_binary(h) ->
+        case Integer.parse(h) do
+          {n, _} when n > 0 -> n
+          _ -> 1080
+        end
+      _ -> 1080
+    end
+  end
+
+  defp publish_video_bitrate,
+    do: Application.get_env(:drone_feed, :publish_video_bitrate, "6M") |> to_string()
+
+  defp publish_video_maxrate,
+    do: Application.get_env(:drone_feed, :publish_video_maxrate, "8M") |> to_string()
+
+  defp publish_video_bufsize,
+    do: Application.get_env(:drone_feed, :publish_video_bufsize, "4M") |> to_string()
+
+  defp publish_gop do
+    case Application.get_env(:drone_feed, :publish_gop, 30) do
+      n when is_integer(n) and n > 0 -> n
+      n when is_binary(n) ->
+        case Integer.parse(n) do
+          {v, _} when v > 0 -> v
+          _ -> 30
+        end
+      _ -> 30
+    end
+  end
+
+  defp publish_x264_preset,
+    do: Application.get_env(:drone_feed, :publish_x264_preset, "veryfast") |> to_string()
+
+  defp publish_x264_profile,
+    do: Application.get_env(:drone_feed, :publish_x264_profile, "main") |> to_string()
 
   defp wait_for_mediamtx do
     Enum.reduce_while(1..20, :ok, fn _, _ ->

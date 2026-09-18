@@ -1,12 +1,24 @@
+/**
+ * Page enter/exit motion for #df-page.
+ *
+ * LiveView keeps the same `id="df-page"` across navigations inside a live_session,
+ * so this hook is often updated rather than remounted. Reveal can also fire
+ * (page-loading-stop) before the next hook instance is active. Both races used
+ * to leave the page stuck on `.df-page-pending` (invisible) after leaving a
+ * live preview.
+ */
 
 let inFlight = false
 let revealToken = 0
 let exitPromise = Promise.resolve()
+/** Set when page-loading-stop runs before a PageMotion hook is active. */
+let revealNeeded = false
 /** @type {object | null} */
 let active = null
 
 const EXIT_MS = 200
 const ENTER_MS = 380
+const FAILSAFE_MS = EXIT_MS + ENTER_MS + 400
 
 function isNavKind(kind) {
   return kind === "redirect" || kind === "patch"
@@ -20,7 +32,13 @@ function queueReveal() {
         requestAnimationFrame(() => {
           if (token !== revealToken) return
           inFlight = false
-          active?.enter()
+          if (active) {
+            revealNeeded = false
+            active.enter()
+          } else {
+            // Mount/updated may still be coming for the destination page.
+            revealNeeded = true
+          }
         })
       })
     })
@@ -30,6 +48,7 @@ function queueReveal() {
 window.addEventListener("phx:page-loading-start", ({ detail }) => {
   if (!isNavKind(detail?.kind)) return
   inFlight = true
+  revealNeeded = false
   revealToken++
   active?.prepare()
 })
@@ -46,24 +65,28 @@ export const PageMotion = {
     active = this
 
     if (this._reduced) {
+      revealNeeded = false
       this.show()
       return
     }
 
-    if (inFlight) {
-      this.holdPending()
-    } else {
+    if (revealNeeded || !inFlight) {
+      revealNeeded = false
       this.enter()
+    } else {
+      this.holdPending()
     }
 
-    this._failsafe = window.setTimeout(() => {
-      if (this._phase === "pending" || this._phase === "enter" || this._phase === "exit") {
-        this.show()
-      }
-    }, EXIT_MS + ENTER_MS + 250)
+    this.armFailsafe()
   },
 
   updated() {
+    // Same DOM node reused across LiveView navigations — apply owed reveal.
+    if (revealNeeded && !inFlight) {
+      revealNeeded = false
+      this.enter()
+      return
+    }
     this.restore()
   },
 
@@ -71,6 +94,13 @@ export const PageMotion = {
     if (active === this) active = null
     this.finishExit()
     this.clearTimers()
+  },
+
+  armFailsafe() {
+    if (this._failsafe) clearTimeout(this._failsafe)
+    this._failsafe = window.setTimeout(() => {
+      if (this._phase !== "shown") this.show()
+    }, FAILSAFE_MS)
   },
 
   clearTimers() {
@@ -182,6 +212,7 @@ export const PageMotion = {
   show() {
     this._phase = "shown"
     inFlight = false
+    revealNeeded = false
     this.finishExit()
     this.clearAnimOnly()
     this.stripMotionClasses()
@@ -205,6 +236,7 @@ export const PageMotion = {
     this.clearAnimOnly()
     this.stripMotionClasses()
     this.el.classList.add("df-page-pending")
+    this.armFailsafe()
 
     this._raf = requestAnimationFrame(() => {
       this._raf = requestAnimationFrame(() => {
