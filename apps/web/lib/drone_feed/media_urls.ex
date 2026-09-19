@@ -124,10 +124,10 @@ defmodule DroneFeed.MediaURLs do
 
   Haivision / MediaMTX (gosrt) URI — `latency` is **milliseconds**.
 
-  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=1000`
+  Example: `srt://host:8890?streamid=read:vod/<id>:drone:<key>&latency=2000`
 
-  Tuned for a reasonably clean WAN (~1s ARQ). Raise via `SRT_PULL_LATENCY_MS`
-  (e.g. 4000) only if you still see SRT stalls on lossy links.
+  Default ~2s ARQ headroom for WAN research tools. Override with `SRT_PULL_LATENCY_MS`
+  (1000 on a clean LAN; 3000–4000 on lossy links).
 
   Do not put FFmpeg-only query keys here (`pkt_size`, microsecond `latency`,
   `rcvbuf`/`sndbuf`). Internal FFmpeg publish keeps those separately.
@@ -217,7 +217,7 @@ defmodule DroneFeed.MediaURLs do
   defp hls_port, do: Application.get_env(:drone_feed, :hls_port, 8888)
 
   defp srt_pull_latency_ms do
-    Application.get_env(:drone_feed, :srt_pull_latency_ms, 1000)
+    Application.get_env(:drone_feed, :srt_pull_latency_ms, 2000)
   end
 
   defp web_host do

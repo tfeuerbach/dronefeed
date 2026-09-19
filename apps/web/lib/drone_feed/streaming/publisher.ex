@@ -253,6 +253,11 @@ defmodule DroneFeed.Streaming.Publisher do
       "0:v:0",
       "-map",
       "0:d:0?",
+      # Constant frame timing — VFR sources cause receiver buffer underruns.
+      "-fps_mode",
+      "cfr",
+      "-r",
+      "30",
       "-c:v",
       "libx264",
       "-preset",
@@ -272,7 +277,10 @@ defmodule DroneFeed.Streaming.Publisher do
         maxrate,
         "-bufsize",
         bufsize,
-        # IDR ~1–2s so MediaMTX HLS / late SRT joiners get SPS/PPS + keyframe.
+        # CBR-ish + repeat SPS/PPS so late SRT joiners / remuxers stay healthy.
+        "-x264-params",
+        "nal-hrd=cbr:force-cfr=1:repeat-headers=1",
+        # IDR ~1s so MediaMTX HLS / late SRT joiners get SPS/PPS + keyframe.
         "-g",
         Integer.to_string(gop),
         "-keyint_min",
@@ -289,6 +297,10 @@ defmodule DroneFeed.Streaming.Publisher do
         "0",
         "-flush_packets",
         "1",
+        "-mpegts_flags",
+        "+resend_headers",
+        "-pcr_period",
+        "20",
         "-f",
         "mpegts",
         # Docker-local SRT into MediaMTX: modest µs latency, default buffers.
@@ -319,13 +331,13 @@ defmodule DroneFeed.Streaming.Publisher do
   end
 
   defp publish_video_bitrate,
-    do: Application.get_env(:drone_feed, :publish_video_bitrate, "6M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_bitrate, "4M") |> to_string()
 
   defp publish_video_maxrate,
-    do: Application.get_env(:drone_feed, :publish_video_maxrate, "8M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_maxrate, "4M") |> to_string()
 
   defp publish_video_bufsize,
-    do: Application.get_env(:drone_feed, :publish_video_bufsize, "4M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_bufsize, "8M") |> to_string()
 
   defp publish_gop do
     case Application.get_env(:drone_feed, :publish_gop, 30) do

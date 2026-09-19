@@ -6,16 +6,23 @@ Supported inputs:
   - Video + DJI .SRT telemetry sidecar                 → SRT→KLV→mux
   - Video + raw .klv sidecar                           → mux
 
-Output is a STANAG-style MPEG-TS research tools can pull over RTSP.
+Consumer DJI .SRT cues typically only carry lat/lon/alt. We still emit those
+as sensor position every cue, and derive platform heading + ground/vertical
+speed from successive GPS samples over a short lookback window so research
+tools can show motion without inventing it from a static pin.
+
+Output is a STANAG-style MPEG-TS research tools can pull over RTSP/SRT.
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,10 +31,106 @@ from klvdata.common import ber_encode, datetime_to_bytes, float_to_bytes, packet
 UAS_KEY = bytes.fromhex("060E2B34020B01010E01030101000000")
 TS_EXTS = {".ts", ".mts", ".m2ts", ".mpg", ".mpeg"}
 
+# Look back this many seconds (or fewer if the clip just started) when
+# estimating speed/heading from GPS deltas.
+MOTION_WINDOW_S = 2.0
+# Ignore sub-meter jitter when updating heading (carry last heading instead).
+MIN_HEADING_MOVE_M = 1.0
+EARTH_RADIUS_M = 6_371_000.0
 
-def encode_uas_packet(lat: float, lon: float, alt: float, ts: datetime) -> bytes:
+
+@dataclass(frozen=True)
+class GpsCue:
+    ts: datetime
+    lat: float
+    lon: float
+    alt: float
+
+
+@dataclass(frozen=True)
+class MotionSample:
+    heading_deg: float | None
+    ground_speed_mps: float
+    vertical_speed_mps: float
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    rlat1, rlon1, rlat2, rlon2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    dlat = rlat2 - rlat1
+    dlon = rlon2 - rlon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
+
+
+def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Initial bearing from point 1 → 2, degrees clockwise from true north [0, 360)."""
+    rlat1, rlat2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    x = math.sin(dlon) * math.cos(rlat2)
+    y = math.cos(rlat1) * math.sin(rlat2) - math.sin(rlat1) * math.cos(rlat2) * math.cos(dlon)
+    return (math.degrees(math.atan2(x, y)) + 360.0) % 360.0
+
+
+def infer_motion(
+    cues: list[GpsCue],
+    *,
+    window_s: float = MOTION_WINDOW_S,
+    min_heading_move_m: float = MIN_HEADING_MOVE_M,
+) -> list[MotionSample]:
+    """Derive heading / ground speed / vertical speed from a GPS cue timeline.
+
+    For each cue, compare against the oldest sample still within ``window_s``
+    (or the previous cue if the window is empty). Ground speed is horizontal
+    distance / Δt; heading updates only when horizontal travel exceeds
+    ``min_heading_move_m`` so hover jitter does not spin the bearing.
+    """
+    if not cues:
+        return []
+
+    out: list[MotionSample] = []
+    last_heading: float | None = None
+    window_start = 0
+
+    for i, cue in enumerate(cues):
+        while window_start < i and (cue.ts - cues[window_start].ts).total_seconds() > window_s:
+            window_start += 1
+
+        j = window_start if window_start < i else max(0, i - 1)
+        prev = cues[j]
+        dt = (cue.ts - prev.ts).total_seconds()
+
+        if i == 0 or dt <= 1e-3:
+            out.append(MotionSample(last_heading, 0.0, 0.0))
+            continue
+
+        horiz_m = haversine_m(prev.lat, prev.lon, cue.lat, cue.lon)
+        ground = min(horiz_m / dt, 255.0)
+        vertical = max(-180.0, min(180.0, (cue.alt - prev.alt) / dt))
+
+        if horiz_m >= min_heading_move_m:
+            last_heading = bearing_deg(prev.lat, prev.lon, cue.lat, cue.lon)
+
+        out.append(MotionSample(last_heading, ground, vertical))
+
+    return out
+
+
+def encode_uas_packet(
+    lat: float,
+    lon: float,
+    alt: float,
+    ts: datetime,
+    *,
+    heading_deg: float | None = None,
+    ground_speed_mps: float = 0.0,
+    vertical_speed_mps: float = 0.0,
+) -> bytes:
     items: list[bytes] = []
     items.append(b"\x02" + ber_encode(8) + datetime_to_bytes(ts))
+
+    if heading_deg is not None:
+        heading_b = float_to_bytes(heading_deg % 360.0, (0, 2**16 - 1), (0, 360))
+        items.append(b"\x05" + ber_encode(len(heading_b)) + heading_b)
 
     lat_b = float_to_bytes(lat, (-(2**31 - 1), 2**31 - 1), (-90, 90))
     items.append(b"\x0d" + ber_encode(len(lat_b)) + lat_b)
@@ -38,6 +141,13 @@ def encode_uas_packet(lat: float, lon: float, alt: float, ts: datetime) -> bytes
     alt_b = float_to_bytes(alt, (0, 2**16 - 1), (-900, 19000))
     items.append(b"\x0f" + ber_encode(len(alt_b)) + alt_b)
 
+    vs_b = float_to_bytes(vertical_speed_mps, (-(2**15 - 1), 2**15 - 1), (-180, 180))
+    items.append(b"\x33" + ber_encode(len(vs_b)) + vs_b)
+
+    gs = max(0.0, min(255.0, ground_speed_mps))
+    gs_b = float_to_bytes(gs, (0, 2**8 - 1), (0, 255))
+    items.append(b"\x38" + ber_encode(len(gs_b)) + gs_b)
+
     # UAS LS version
     items.append(b"\x41" + ber_encode(1) + bytes([9]))
 
@@ -46,10 +156,10 @@ def encode_uas_packet(lat: float, lon: float, alt: float, ts: datetime) -> bytes
     return packet[:-2] + packet_checksum(packet)
 
 
-def parse_dji_srt(path: Path) -> list[tuple[datetime, float, float, float]]:
+def parse_dji_srt(path: Path) -> list[GpsCue]:
     text = path.read_text(errors="ignore")
     blocks = re.split(r"\n\s*\n", text.strip())
-    cues: list[tuple[datetime, float, float, float]] = []
+    cues: list[GpsCue] = []
 
     for block in blocks:
         geo = re.search(
@@ -75,7 +185,7 @@ def parse_dji_srt(path: Path) -> list[tuple[datetime, float, float, float]]:
             # Fall back to synthetic timeline (~30 fps)
             ts = datetime.fromtimestamp(len(cues) / 30.0, tz=timezone.utc)
 
-        cues.append((ts, lat, lon, alt))
+        cues.append(GpsCue(ts, lat, lon, alt))
 
     return cues
 
@@ -105,9 +215,20 @@ def write_klv_from_srt(srt_path: Path, klv_path: Path) -> int:
     if not cues:
         raise SystemExit(f"no GPS telemetry cues found in {srt_path}")
 
+    motion = infer_motion(cues)
     with klv_path.open("wb") as fh:
-        for ts, lat, lon, alt in cues:
-            fh.write(encode_uas_packet(lat, lon, alt, ts))
+        for cue, sample in zip(cues, motion):
+            fh.write(
+                encode_uas_packet(
+                    cue.lat,
+                    cue.lon,
+                    cue.alt,
+                    cue.ts,
+                    heading_deg=sample.heading_deg,
+                    ground_speed_mps=sample.ground_speed_mps,
+                    vertical_speed_mps=sample.vertical_speed_mps,
+                )
+            )
     return len(cues)
 
 

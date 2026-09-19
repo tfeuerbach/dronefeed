@@ -89,8 +89,9 @@ config :drone_feed,
   rtsp_port: 8554,
   srt_port: 8890,
   hls_port: 8888,
-  # Haivision/gosrt public pull (ms). Prefer ~1000 on clean WAN; 4000 only if lossy.
-  srt_pull_latency_ms: 1000,
+  # Haivision/gosrt public pull (ms). ~2s ARQ headroom for WAN research tools.
+  # Lower to 1000 on a very clean path; raise to 3000–4000 if you still see stalls.
+  srt_pull_latency_ms: 2000,
   # FFmpeg→MediaMTX SRT publish (µs). Docker-local; keep buffers at SRT defaults.
   publish_srt_latency_us: 500_000,
   web_host: "localhost",
@@ -107,11 +108,11 @@ config :drone_feed,
   mux_script: Path.expand("../../../scripts/mux_to_stanag.py", __DIR__),
   extract_klv_script: Path.expand("../../../scripts/extract_klv_track.py", __DIR__),
   python_path: System.find_executable("python3") || "python3",
-  # Public-feed distribution encode (MediaMTX SRT/HLS need live-style H.264).
+  # Public-feed distribution encode — CBR-ish CFR for smooth SRT pulls.
   publish_video_height: 1080,
-  publish_video_bitrate: "6M",
-  publish_video_maxrate: "8M",
-  publish_video_bufsize: "4M",
+  publish_video_bitrate: "4M",
+  publish_video_maxrate: "4M",
+  publish_video_bufsize: "8M",
   publish_gop: 30,
   publish_x264_preset: "veryfast",
   publish_x264_profile: "main",

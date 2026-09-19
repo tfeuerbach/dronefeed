@@ -42,5 +42,10 @@ defmodule DroneFeed.Streaming.PublisherTest do
     refute Enum.any?(args, &String.contains?(&1, "sndbuf="))
     refute Enum.any?(args, &String.contains?(&1, "rcvbuf="))
     refute Enum.any?(args, &String.contains?(&1, "latency=4000000"))
+    assert "-fps_mode" in args
+    assert "cfr" in args
+    assert "-x264-params" in args
+    assert Enum.any?(args, &String.contains?(&1, "nal-hrd=cbr"))
+    assert "-mpegts_flags" in args
   end
 end

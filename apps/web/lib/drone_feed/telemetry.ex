@@ -1,6 +1,9 @@
 defmodule DroneFeed.Telemetry do
   @moduledoc """
-  Parses consumer DJI .SRT telemetry and enterprise KLV tracks into map points.
+  Parses consumer DJI .SRT telemetry and enterprise KLV tracks into map points
+  for the browser UI (lat/lon/alt). This is separate from Public-feed STANAG
+  egress: derived heading/speed for research tools are added in `mux_to_stanag.py`,
+  not here.
   """
 
   alias DroneFeed.Flights.Flight

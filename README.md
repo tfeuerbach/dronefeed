@@ -36,12 +36,12 @@ flowchart TB
   end
 
   subgraph recorded["Recorded flights"]
-    DJI["Consumer — MP4 + .SRT"]
+    DJI["Consumer — MP4 + .SRT<br/>(lat/lon/alt)"]
     ENT["Enterprise — TS + KLV"]
-    MUX["mux_to_stanag.py"]
+    MUX["mux_to_stanag.py<br/>SRT→KLV + derive heading/speed"]
     TS["publish_stanag.ts"]
     DJI --> MUX
-    ENT --> MUX
+    ENT -->|"passthrough KLV"| MUX
     MUX --> TS
   end
 
@@ -65,17 +65,29 @@ flowchart TB
   WEB -.->|HTTP auth webhook| mtx
 ```
 
-**Recorded — Public feed on**
+**Recorded FMV + metadata lifecycle**
+
+```text
+Upload video + optional .srt / .klv
+        → storage (source of truth; ~5-day retention)
+        → [Public feed OFF] UI map/preview only; no MediaMTX path
+        → [Public feed ON]
+              mux_to_stanag.py → publish_stanag.ts (cached; rebuilds if assets or mux script change)
+              FFmpeg distribution encode (≈4 Mbps CBR-ish 1080p) + KLV copy
+              → MediaMTX publish:vod/<id>
+              → pull SRT / RTSP / RTMP capability URLs (+ HTTP .srt/.klv sidecars)
+```
 
 1. Flight assets land in storage (video + optional `.srt` / `.klv`).
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
-   - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video
-   - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present
-3. FFmpeg loops the full TS (including KLV) into MediaMTX over **SRT** (`publish:vod/<id>`). MediaMTX re-serves **SRT / RTSP / RTMP** pull (one source per path). Prefer **SRT** for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
+   - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video. Cues usually only have lat/lon/alt; the muxer emits those every packet and **derives** platform heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from GPS deltas over a ~2s lookback window (heading updates only after ~1 m of travel so hover jitter does not spin the bearing).
+   - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present (full ST 0601 tags preserved — no rewrite).
+3. FFmpeg loops that TS into MediaMTX over **SRT** (`publish:vod/<id>`): video is re-encoded for puller health; the **KLV data track is copied**. MediaMTX re-serves **SRT / RTSP / RTMP** (one source per path). Prefer **SRT** (`latency=2000` ms default) for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
 4. Research tools open the **capability URL** from the UI (token embedded — RTMP `?user=&pass=`, RTSP userinfo, or SRT `streamid`). No separate username/password.
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
+6. Public feed off (or expiry) stops the publisher; pull URLs go dark. Source files remain until retention deletes them.
 
-**Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — separate from the STANAG mux used for egress.
+**Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — **separate** from the STANAG mux used for egress. Gladius / ops maps that read the pull stream see the muxed MISB packets (including derived motion on consumer flights).
 
 **Live ingest**
 
@@ -146,7 +158,8 @@ Caddy serves HTTPS on 443 with automatic certificate renewal. Point your domain'
 - `apps/web` — Phoenix application
 - `images/brand-mark.svg` — brand mark (README); also at `apps/web/priv/static/images/`
 - `deploy/` — MediaMTX config, Docker Compose, Dockerfile, `.env`
-- `scripts/mux_to_stanag.py` — SRT→KLV / STANAG MPEG-TS normalize
+- `scripts/mux_to_stanag.py` — SRT→KLV (with derived heading/speed) / STANAG MPEG-TS normalize
+- `scripts/test_mux_motion.py` — unit tests for GPS→motion inference
 - `scripts/extract_klv_track.py` — KLV → JSON for UI map/readouts
 - `scripts/seed_dev.sh` — re-seed local admin
 - `scripts/download_sample_data.sh` — fetch gitignored demo flights

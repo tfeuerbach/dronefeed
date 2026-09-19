@@ -23,7 +23,7 @@ defmodule DroneFeed.StreamingTest do
     assert urls.hls_pull =~ "/hls/live/#{session.id}/index.m3u8"
     assert urls.rtsp_pull =~ "rtsp://drone:#{session.stream_key}@"
     assert urls.srt_pull =~ ":drone:#{session.stream_key}"
-    assert urls.srt_pull =~ "&latency=1000"
+    assert urls.srt_pull =~ "&latency=2000"
     refute urls.srt_pull =~ "pkt_size"
     refute urls.srt_pull =~ "rcvbuf"
     refute Map.has_key?(urls, :stream_key)

@@ -4,6 +4,11 @@ defmodule DroneFeed.Streaming.StanagMux do
 
   Consumer DJI (MP4 + .SRT) and enterprise TS+KLV both become the same
   STANAG-style transport that research tools can pull (prefer SRT MPEG-TS).
+
+  Consumer path: `mux_to_stanag.py` synthesizes ST 0601 from GPS cues and derives
+  heading / ground / vertical speed from a short lookback window. Enterprise path
+  remuxes existing KLV unchanged. Cache invalidates when assets or the mux script
+  change (see `fresh?/2`).
   """
 
   require Logger
@@ -30,8 +35,11 @@ defmodule DroneFeed.Streaming.StanagMux do
   end
 
   defp fresh?(%Flight{} = flight, out) do
+    script = mux_script()
+
     File.exists?(out) and
       mtime(out) >= mtime(flight.video_path) and
+      mtime(out) >= mtime(script) and
       (is_nil(flight.srt_path) or not File.exists?(flight.srt_path) or
          mtime(out) >= mtime(flight.srt_path)) and
       (is_nil(flight.klv_path) or not File.exists?(flight.klv_path) or

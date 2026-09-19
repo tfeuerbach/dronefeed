@@ -27,22 +27,34 @@ RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 - RTMP (query auth — required by MediaMTX): `rtmp://MEDIA_IP:1935/vod/<id>?user=drone&pass=<key>`
 - RTSP: `rtsp://drone:<key>@MEDIA_IP:8554/vod/<id>`
 - SRT (preferred for H.264+KLV; Haivision / MediaMTX URI):  
-  `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&latency=4000`  
-  (`latency` is milliseconds. FFmpeg-only extras like `pkt_size` / µs latency / huge
-  `rcvbuf` belong on the client CLI, not this capability URL.)
+  `srt://MEDIA_IP:8890?streamid=read:vod/<id>:drone:<key>&latency=2000`  
+  (`latency` is milliseconds — default 2s ARQ for WAN. Set `SRT_PULL_LATENCY_MS`
+  to 1000 on a clean path or 3000–4000 if pulls still stall. FFmpeg-only extras
+  like `pkt_size` / µs latency / huge `rcvbuf` belong on the client CLI, not this
+  capability URL.)
+
+Public VOD republish defaults to a **CBR-ish 4 Mbps 1080p Main** encode (`PUBLISH_VIDEO_*`)
+so SRT pulls stay smoother than peaky VBR. Toggle Public feed off/on after changing
+those env vars so FFmpeg restarts.
 
 **Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only). The Flights UI plays a same-origin HLS preview at `https://PHX_HOST/hls/live/<id>/index.m3u8` (Caddy → MediaMTX `:8888`). Expect a few seconds of delay (phone keyframe interval + HLS); RTSP/SRT pulls are closer to real time.
 
 KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTSP exposes KLV as a separate RTP/SMPTE336M track (RFC 6597), not as MPEG-TS-in-RTSP. RTMP/FLV cannot carry KLV.
 
+**Consumer vs enterprise KLV on Public feed**
+
+- **DJI / `.SRT` uploads** — `mux_to_stanag.py` synthesizes ST 0601 from GPS cues (sensor lat/lon/alt every packet) and **derives** heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from a ~2s GPS lookback. The source `.SRT` typically has no speed/heading fields.
+- **Enterprise TS+KLV** — remux/passthrough; existing motion tags are preserved.
+- Cached `publish_stanag.ts` rebuilds when the video/sidecar **or** the mux script changes. Toggle Public feed off/on after a mux deploy so FFmpeg picks up the new TS.
+
 Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates TLS and reverse-proxies.
 
 ## Minimum instance (architecture)
 
-Public feed defaults to a ~6 Mbps 1080p encode (see `PUBLISH_VIDEO_*` env). That
-keeps MediaMTX remux / Gladius HLS healthy. Raising `PUBLISH_VIDEO_HEIGHT=0`
-(source resolution) still re-encodes for IDRs; do not expect `-c copy` 4K to be
-playable over SRT/HLS on MediaMTX.
+Public feed defaults to a ~4 Mbps CBR-ish 1080p encode (see `PUBLISH_VIDEO_*`). That
+keeps MediaMTX remux / research-tool SRT pulls healthier than peaky VBR. Raising
+`PUBLISH_VIDEO_HEIGHT=0` (source resolution) still re-encodes for IDRs; do not expect
+`-c copy` 4K to be playable over SRT/HLS on MediaMTX.
 
 | Workload | Minimum | Notes |
 |----------|---------|--------|
