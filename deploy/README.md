@@ -163,3 +163,9 @@ For TLS on bare metal, run Caddy (or nginx) on the host pointing at Phoenix `:40
 1. Start Postgres (compose `db` only, or local on 5434)
 2. `cd apps/web && mix setup && mix phx.server`
 3. Run MediaMTX: `docker run --rm -p 1935:1935 -p 8554:8554 -p 8890:8890/udp -v $PWD/deploy/mediamtx.yml:/mediamtx.yml bluenviron/mediamtx:1.19.3` with `MTX_AUTHHTTPADDRESS=http://host.docker.internal:4000/api/mediamtx/auth` (Linux: use host gateway IP)
+
+## After-hours (EC2 stopped)
+
+When the instance is powered off for cost savings, a static S3/CloudFront page
+(“DroneFeed is down after hours”) can be served via a Cloudflare Worker.
+See [maintenance/README.md](./maintenance/README.md).

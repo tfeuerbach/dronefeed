@@ -158,6 +158,7 @@ Caddy serves HTTPS on 443 with automatic certificate renewal. Point your domain'
 - `apps/web` — Phoenix application
 - `images/brand-mark.svg` — brand mark (README); also at `apps/web/priv/static/images/`
 - `deploy/` — MediaMTX config, Docker Compose, Dockerfile, `.env`
+- `deploy/maintenance/` — after-hours static page (S3/CloudFront) + Cloudflare Worker
 - `scripts/mux_to_stanag.py` — SRT→KLV (with derived heading/speed) / STANAG MPEG-TS normalize
 - `scripts/test_mux_motion.py` — unit tests for GPS→motion inference
 - `scripts/extract_klv_track.py` — KLV → JSON for UI map/readouts

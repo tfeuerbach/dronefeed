@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="signal-dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0D9F8F" />
+    <meta name="robots" content="noindex" />
+    <title>{{PAGE_TITLE}}</title>
+    <link rel="icon" href="{{ASSET_BASE_URL}}/brand-mark.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #0f1419;
+        --slate: #1c2430;
+        --signal: #0d9f8f;
+        --signal-bright: #2dd4bf;
+        --text: #e8eef4;
+        --muted: #9aa8b8;
+        --line: rgba(232, 238, 244, 0.12);
+        --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: var(--font-sans);
+        color: var(--text);
+        background-color: var(--ink);
+        background-image:
+          radial-gradient(ellipse 70% 45% at 100% -10%, rgba(45, 212, 191, 0.1), transparent),
+          radial-gradient(ellipse 50% 35% at 0% 100%, rgba(58, 79, 106, 0.35), transparent);
+        background-attachment: fixed;
+      }
+
+      .shell {
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        isolation: isolate;
+      }
+
+      .shell::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(232, 238, 244, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(232, 238, 244, 0.08) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.45;
+        mask-image: radial-gradient(ellipse 95% 80% at 50% 30%, black 20%, transparent 85%);
+      }
+
+      .nav {
+        border-bottom: 1px solid var(--line);
+        background: rgba(15, 20, 25, 0.85);
+        backdrop-filter: blur(12px);
+      }
+
+      .nav::after {
+        content: "";
+        display: block;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          var(--signal) 20%,
+          rgba(245, 158, 11, 0.55) 55%,
+          transparent 100%
+        );
+        opacity: 0.85;
+      }
+
+      .nav-inner {
+        max-width: 56rem;
+        margin: 0 auto;
+        padding: 0.9rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .brand img {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2.5rem 1.25rem 3.5rem;
+      }
+
+      .panel {
+        width: min(100%, 34rem);
+        text-align: center;
+      }
+
+      .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--signal-bright);
+        margin: 0 0 1rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.75rem, 4vw, 2.35rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+      }
+
+      .lede {
+        margin: 1rem 0 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.55;
+      }
+
+      .meta {
+        margin-top: 1.75rem;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--line);
+        border-radius: 0.5rem;
+        background: rgba(28, 36, 48, 0.55);
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .meta strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="nav">
+        <div class="nav-inner">
+          <a class="brand" href="/">
+            <img src="{{ASSET_BASE_URL}}/brand-mark.svg" width="28" height="28" alt="" />
+            <span>{{BRAND_NAME}}</span>
+          </a>
+        </div>
+      </header>
+      <main>
+        <div class="panel">
+          <p class="eyebrow">{{PAGE_EYEBROW}}</p>
+          <h1>{{PAGE_HEADLINE}}</h1>
+          <p class="lede">{{PAGE_LEDE}}</p>
+          <p class="meta">{{PAGE_META}}</p>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
