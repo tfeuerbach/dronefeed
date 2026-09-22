@@ -126,7 +126,8 @@ Demo fixtures (gitignored — download once):
 
 ```bash
 ./scripts/download_sample_data.sh
-# → sample-data/consumer-dji/… and sample-data/enterprise-klv/Day_Flight.mpg
+# → sample-data/consumer-dji/… and sample-data/enterprise-klv/ (QGISFMV MISB .ts)
+# Optional: QGISFMV_ARCHIVE=/path/to/QGISFMV_Samples.7z ./scripts/download_sample_data.sh
 ```
 
 Run MediaMTX locally (auth → Phoenix):

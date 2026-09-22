@@ -6,6 +6,12 @@ Download with:
 ./scripts/download_sample_data.sh
 ```
 
+Enterprise pack is **~5.5 GB**. If you already have the Drive archive:
+
+```bash
+QGISFMV_ARCHIVE=/path/to/QGISFMV_Samples.7z ./scripts/download_sample_data.sh
+```
+
 ## consumer-dji/
 
 One flight from [imageomics/KABR-mini-scene-raw-videos](https://huggingface.co/datasets/imageomics/KABR-mini-scene-raw-videos) (CC0):
@@ -21,9 +27,13 @@ Override flight id: `KABR_FLIGHT=12_01_23-DJI_0008 ./scripts/download_sample_dat
 
 ## enterprise-klv/
 
-- `Day_Flight.mpg` — FFmpeg.org STANAG-style MPEG-TS with embedded MISB KLV  
-  Source: https://samples.ffmpeg.org/MPEG2/mpegts-klv/
+[QGISFMV_Samples.7z](https://drive.google.com/file/d/137JaQwx5kVwhdcrxwTCSgxqBbaOjW9be/view)
+(All4Gis / QGIS Full Motion Video) — prebuilt MISB ST 0601 MPEG-TS clips with
+**embedded KLV** (not consumer SRT). Includes enterprise-style samples such as
+`Cheyenne.ts`.
 
-Already includes richer ST 0601 tags (e.g. platform heading and ground speed).
-DroneFeed passthroughs the data track on Public feed — good for validating that
-tools render motion tags without relying on SRT→KLV derivation.
+Upload a `.ts` / `.mpg` alone for Public feed; DroneFeed passthroughs the data
+track. Prefer these over the old FFmpeg `Day Flight.mpg` (sparse KLV).
+
+Archive is cached under `sample-data/.cache/QGISFMV_Samples.7z` after the first
+fetch. Remove `enterprise-klv/.qgis_fmv_extracted` to force re-extract.
