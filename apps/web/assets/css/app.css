@@ -89,6 +89,7 @@
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+@custom-variant phx-drop-target-active (.phx-drop-target-active&, .phx-drop-target-active &);
 @custom-variant dark (&:where([data-theme=signal-dark], [data-theme=signal-dark] *));
 
 [data-phx-session],
@@ -795,6 +796,23 @@ html.df-embed .df-reveal-item {
   background: color-mix(in oklch, var(--color-base-100) 70%, var(--color-base-200));
   border-radius: var(--radius-box);
   padding: 1.25rem;
+}
+
+.df-dropzone {
+  border: 1px dashed color-mix(in oklch, var(--color-base-content) 22%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 55%, transparent);
+  border-radius: var(--radius-box);
+  padding: 0.875rem 1rem;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.df-dropzone.phx-drop-target-active {
+  border-color: color-mix(in oklch, var(--color-primary) 70%, transparent);
+  background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-100));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-primary) 35%, transparent);
 }
 
 .df-panel-muted {

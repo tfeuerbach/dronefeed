@@ -16,7 +16,7 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
             >
               ← Flights
             </a>
-            <div class="flex flex-wrap items-center gap-3">
+            <div :if={!@editing_name?} class="flex flex-wrap items-center gap-3">
               <span :if={@session.publishing} class="df-live-dot" title="Public feed"></span>
               <h1 class="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
                 {@session.name}
@@ -24,7 +24,35 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
               <span class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px] uppercase text-base-content/50">
                 {if @session.ingest_mode == "udp_mpegts", do: "udp", else: "push"}
               </span>
+              <button
+                :if={@can_rename?}
+                type="button"
+                class="btn btn-ghost btn-sm"
+                phx-click="start_rename"
+              >
+                Rename
+              </button>
             </div>
+            <form
+              :if={@editing_name?}
+              id="rename-live-session"
+              phx-submit="rename"
+              class="flex flex-wrap items-center gap-2"
+            >
+              <input
+                type="text"
+                name="name"
+                value={@session.name}
+                required
+                maxlength="200"
+                class="input input-bordered w-full max-w-md text-lg font-semibold"
+                phx-mounted={JS.focus()}
+              />
+              <.button type="submit" variant="primary" class="btn-sm">Save</.button>
+              <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_rename">
+                Cancel
+              </button>
+            </form>
             <p class="font-mono text-xs text-base-content/50">
               Live ingest
               <span :if={@session.user}> · {@session.user.email}</span>
@@ -124,7 +152,9 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
          |> assign(:session, session)
          |> assign(:urls, Streaming.urls(session))
          |> assign(:owner?, Streaming.owns?(scope, session))
-         |> assign(:can_end?, Streaming.can_end?(scope, session))}
+         |> assign(:can_end?, Streaming.can_end?(scope, session))
+         |> assign(:can_rename?, Streaming.can_rename?(scope, session))
+         |> assign(:editing_name?, false)}
 
       {:error, :not_found} ->
         {:ok,
@@ -151,6 +181,48 @@ defmodule DroneFeedWeb.LiveSessionLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not update public feed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("start_rename", _params, socket) do
+    if socket.assigns.can_rename? do
+      {:noreply, assign(socket, :editing_name?, true)}
+    else
+      {:noreply, put_flash(socket, :error, "Only an admin can rename live sessions")}
+    end
+  end
+
+  def handle_event("cancel_rename", _params, socket) do
+    {:noreply, assign(socket, :editing_name?, false)}
+  end
+
+  def handle_event("rename", %{"name" => name}, socket) do
+    scope = socket.assigns.current_scope
+    session = socket.assigns.session
+
+    case Streaming.rename_live_session(scope, session.id, name) do
+      {:ok, updated} ->
+        {:noreply,
+         socket
+         |> assign(:session, updated)
+         |> assign(:page_title, updated.name)
+         |> assign(:editing_name?, false)
+         |> put_flash(:info, "Live session renamed")}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only an admin can rename live sessions")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        msg =
+          changeset
+          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+          |> Map.get(:name, ["invalid name"])
+          |> List.first()
+
+        {:noreply, put_flash(socket, :error, "Could not rename: #{msg}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not rename: #{inspect(reason)}")}
     end
   end
 

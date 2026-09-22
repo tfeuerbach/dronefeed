@@ -48,7 +48,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
           <div :if={@create_mode == :upload} class="space-y-4">
             <p class="text-sm text-base-content/60">
               FMV / MP4 / TS plus optional SRT or KLV telemetry. Files stay in the shared library for
-              {@retention_days} days.
+              {@retention_days} days. Drag and drop into a zone or use Choose file.
             </p>
             <.form
               for={@form}
@@ -58,29 +58,22 @@ defmodule DroneFeedWeb.FlightLive.Index do
               class="space-y-4"
             >
               <.input field={@form[:name]} type="text" label="Name" required />
-              <div class="space-y-2">
-                <label class="label"><span class="label-text">Video (FMV / MP4 / TS)</span></label>
-                <.live_file_input upload={@uploads.video} class="file-input file-input-bordered w-full" />
-                <p :for={entry <- @uploads.video.entries} class="font-mono text-xs text-base-content/60">
-                  {entry.client_name} · {Float.round(entry.progress * 1.0, 0)}%
-                </p>
-                <p :for={err <- upload_errors(@uploads.video)} class="text-sm text-error">
-                  {error_to_string(err)}
-                </p>
-              </div>
+              <.upload_dropzone
+                upload={@uploads.video}
+                label="Video (FMV / MP4 / TS)"
+                hint="Required — drag and drop or choose a file"
+              />
               <div class="grid gap-4 sm:grid-cols-2">
-                <div class="space-y-2">
-                  <label class="label">
-                    <span class="label-text">Telemetry (.srt) — consumer drone metadata</span>
-                  </label>
-                  <.live_file_input upload={@uploads.srt} class="file-input file-input-bordered w-full" />
-                </div>
-                <div class="space-y-2">
-                  <label class="label">
-                    <span class="label-text">KLV — enterprise metadata (optional)</span>
-                  </label>
-                  <.live_file_input upload={@uploads.klv} class="file-input file-input-bordered w-full" />
-                </div>
+                <.upload_dropzone
+                  upload={@uploads.srt}
+                  label="Telemetry (.srt)"
+                  hint="Consumer drone metadata — optional"
+                />
+                <.upload_dropzone
+                  upload={@uploads.klv}
+                  label="KLV"
+                  hint="Enterprise metadata sidecar — optional if already in the TS"
+                />
               </div>
               <.button phx-disable-with="Uploading..." variant="primary">Upload flight</.button>
             </.form>
@@ -129,8 +122,11 @@ defmodule DroneFeedWeb.FlightLive.Index do
               class="df-panel"
             >
               <div class="flex flex-wrap items-start justify-between gap-3">
-                <div class="min-w-0 space-y-1">
-                  <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1 space-y-1">
+                  <div
+                    :if={@renaming_session_id != session.id}
+                    class="flex flex-wrap items-center gap-2"
+                  >
                     <span
                       :if={session.publishing}
                       class="df-live-dot"
@@ -147,6 +143,31 @@ defmodule DroneFeedWeb.FlightLive.Index do
                       {if session.ingest_mode == "udp_mpegts", do: "udp", else: "push"}
                     </span>
                   </div>
+                  <form
+                    :if={@renaming_session_id == session.id}
+                    id={"rename-live-#{session.id}"}
+                    phx-submit="rename_live"
+                    class="flex flex-wrap items-center gap-2"
+                  >
+                    <input type="hidden" name="session_id" value={session.id} />
+                    <input
+                      type="text"
+                      name="name"
+                      value={session.name}
+                      required
+                      maxlength="200"
+                      class="input input-bordered input-sm w-full max-w-xs"
+                      phx-mounted={JS.focus()}
+                    />
+                    <.button type="submit" variant="primary" class="btn-sm">Save</.button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      phx-click="cancel_rename_live"
+                    >
+                      Cancel
+                    </button>
+                  </form>
                   <p :if={session.user} class="text-xs text-base-content/45">
                     Started by {session.user.email}
                   </p>
@@ -155,6 +176,15 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   <.link navigate={~p"/live/#{session.id}"} class="btn btn-ghost btn-sm">
                     Open
                   </.link>
+                  <button
+                    :if={Streaming.can_rename?(@current_scope, session)}
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    phx-click="start_rename_live"
+                    phx-value-id={session.id}
+                  >
+                    Rename
+                  </button>
                   <label
                     :if={Streaming.owns?(@current_scope, session)}
                     class="flex cursor-pointer items-center gap-2 text-sm"
@@ -263,6 +293,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
      socket
      |> assign(:page_title, "Flights")
      |> assign(:create_mode, :upload)
+     |> assign(:renaming_session_id, nil)
      |> assign(:retention_days, Application.get_env(:drone_feed, :retention_days, 5))
      |> assign(:flights, Flights.list_flights(scope))
      |> assign(:sessions, Streaming.list_live_sessions(scope))
@@ -371,13 +402,59 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
     case Streaming.end_live_session(scope, id) do
       {:ok, _} ->
-        {:noreply, assign(socket, sessions: Streaming.list_live_sessions(scope))}
+        {:noreply,
+         socket
+         |> assign(:renaming_session_id, nil)
+         |> assign(sessions: Streaming.list_live_sessions(scope))}
 
       {:error, :forbidden} ->
         {:noreply, put_flash(socket, :error, "Only the session owner or an admin can end it")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not end session: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("start_rename_live", %{"id" => id}, socket) do
+    scope = socket.assigns.current_scope
+    session = Streaming.get_live_session!(scope, id)
+
+    if Streaming.can_rename?(scope, session) do
+      {:noreply, assign(socket, :renaming_session_id, id)}
+    else
+      {:noreply, put_flash(socket, :error, "Only an admin can rename live sessions")}
+    end
+  end
+
+  def handle_event("cancel_rename_live", _params, socket) do
+    {:noreply, assign(socket, :renaming_session_id, nil)}
+  end
+
+  def handle_event("rename_live", %{"session_id" => id, "name" => name}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Streaming.rename_live_session(scope, id, name) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:renaming_session_id, nil)
+         |> assign(sessions: Streaming.list_live_sessions(scope))
+         |> put_flash(:info, "Live session renamed")}
+
+      {:error, :forbidden} ->
+        {:noreply, put_flash(socket, :error, "Only an admin can rename live sessions")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        msg =
+          changeset
+          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+          |> Map.get(:name, ["invalid name"])
+          |> List.first()
+
+        {:noreply, put_flash(socket, :error, "Could not rename: #{msg}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not rename: #{inspect(reason)}")}
     end
   end
 
@@ -435,6 +512,26 @@ defmodule DroneFeedWeb.FlightLive.Index do
     tmp = Path.join(System.tmp_dir!(), "#{entry.uuid}-#{entry.client_name}")
     File.cp!(meta.path, tmp)
     {:ok, %{path: tmp, filename: entry.client_name}}
+  end
+
+  defp upload_dropzone(assigns) do
+    assigns = assign_new(assigns, :hint, fn -> nil end)
+
+    ~H"""
+    <div class="df-dropzone space-y-2" phx-drop-target={@upload.ref}>
+      <label class="label py-0">
+        <span class="label-text">{@label}</span>
+      </label>
+      <p :if={@hint} class="text-xs text-base-content/50">{@hint}</p>
+      <.live_file_input upload={@upload} class="file-input file-input-bordered w-full" />
+      <p :for={entry <- @upload.entries} class="font-mono text-xs text-base-content/60">
+        {entry.client_name} · {Float.round(entry.progress * 1.0, 0)}%
+      </p>
+      <p :for={err <- upload_errors(@upload)} class="text-sm text-error">
+        {error_to_string(err)}
+      </p>
+    </div>
+    """
   end
 
   defp error_to_string(:too_large), do: "file too large"

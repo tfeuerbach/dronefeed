@@ -113,4 +113,19 @@ defmodule DroneFeed.StreamingTest do
     assert {:ok, _} = Streaming.end_live_session(other, theirs.id)
     assert {:error, :not_found} = Streaming.fetch_active_live_session(scope, theirs.id)
   end
+
+  test "admins can rename live sessions; owners cannot", %{scope: scope} do
+    other = DroneFeed.AccountsFixtures.user_scope_fixture()
+    assert {:ok, session} = Streaming.create_live_session(other, %{"name" => "Pad-1"})
+
+    refute Streaming.can_rename?(scope, session)
+    assert {:error, :forbidden} = Streaming.rename_live_session(scope, session.id, "Nope")
+
+    admin_scope =
+      DroneFeed.AccountsFixtures.user_scope_fixture(DroneFeed.AccountsFixtures.admin_fixture())
+
+    assert Streaming.can_rename?(admin_scope, session)
+    assert {:ok, renamed} = Streaming.rename_live_session(admin_scope, session.id, "  Pad-2  ")
+    assert renamed.name == "Pad-2"
+  end
 end

@@ -35,6 +35,13 @@ defmodule DroneFeed.Streaming.LiveSession do
     change(session, publishing: publishing)
   end
 
+  def name_changeset(session, attrs) do
+    session
+    |> cast(attrs, [:name])
+    |> validate_required([:name])
+    |> validate_length(:name, min: 1, max: 200)
+  end
+
   defp validate_udp_port(changeset) do
     mode = get_field(changeset, :ingest_mode)
     active = get_field(changeset, :active)

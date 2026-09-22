@@ -76,6 +76,36 @@ defmodule DroneFeed.Streaming do
   def can_end?(%Scope{} = scope, %LiveSession{} = session), do: owns?(scope, session)
 
   @doc """
+  Admins may rename any active live session (display name only).
+  """
+  def can_rename?(%Scope{user: %{role: "admin"}}, %LiveSession{}), do: true
+  def can_rename?(_, _), do: false
+
+  @doc """
+  Renames a live session. Admin-only; does not change stream keys or ingest.
+  """
+  def rename_live_session(%Scope{} = scope, id, name) when is_binary(name) do
+    session = get_live_session!(scope, id)
+
+    cond do
+      not can_rename?(scope, session) ->
+        {:error, :forbidden}
+
+      not session.active ->
+        {:error, :inactive}
+
+      true ->
+        session
+        |> LiveSession.name_changeset(%{"name" => String.trim(name)})
+        |> Repo.update()
+        |> case do
+          {:ok, updated} -> {:ok, Repo.preload(updated, :user)}
+          other -> other
+        end
+    end
+  end
+
+  @doc """
   Owner-only Public feed toggle for live sessions.
 
   When off, MediaMTX still accepts drone **publish**, but **read/playback**
