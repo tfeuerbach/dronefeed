@@ -167,8 +167,11 @@
         </div>
         <p class="hint">
           Host must allow framing (<code>FRAME_ANCESTORS</code>) and use
-          <code>SameSite=None; Secure</code> cookies (<code>EMBED_COOKIES=true</code>).
-          Prefer <code>?embed=1</code> so compact chrome stays on after LiveView navigations.
+          <code>SameSite=None; Secure; Partitioned</code> cookies
+          (<code>EMBED_COOKIES=true</code>). Prefer <code>?embed=1</code> so compact
+          chrome stays on after LiveView navigations. If the panel keeps reloading
+          or the login field loses focus, the session cookie is being blocked —
+          confirm those env vars on the DroneFeed host.
         </p>
       </main>
     </div>

@@ -5,6 +5,11 @@ defmodule DroneFeedWeb.SessionCookie do
   For cross-origin iframe embeds (research tools), set
   `SESSION_SAME_SITE=None` (or `EMBED_COOKIES=true`). Browsers require
   `Secure` when SameSite is None — always enabled in that mode.
+
+  Chrome's third-party cookie phaseout also requires the `Partitioned`
+  attribute (CHIPS) for cookies set inside cross-site iframes; without it
+  the session cookie is dropped, LiveView reconnects in a loop, and form
+  focus is lost on every remount.
   """
 
   @doc """
@@ -18,6 +23,7 @@ defmodule DroneFeedWeb.SessionCookie do
       same_site: same_site(),
       secure: secure?()
     ]
+    |> maybe_partitioned()
   end
 
   @doc """
@@ -30,6 +36,7 @@ defmodule DroneFeedWeb.SessionCookie do
       same_site: same_site(),
       secure: secure?()
     ]
+    |> maybe_partitioned()
   end
 
   defp same_site do
@@ -39,5 +46,14 @@ defmodule DroneFeedWeb.SessionCookie do
   defp secure? do
     Application.get_env(:drone_feed, :session_cookie_secure, false) or
       same_site() == "None"
+  end
+
+  # Plug has no first-class :partitioned yet — append via :extra.
+  defp maybe_partitioned(opts) do
+    if same_site() == "None" do
+      Keyword.put(opts, :extra, "Partitioned;")
+    else
+      opts
+    end
   end
 end

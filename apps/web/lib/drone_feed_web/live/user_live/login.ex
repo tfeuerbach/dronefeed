@@ -40,7 +40,6 @@ defmodule DroneFeedWeb.UserLive.Login do
               autocomplete="username"
               spellcheck="false"
               required
-              phx-mounted={JS.focus()}
             />
             <.input
               field={@form[:password]}

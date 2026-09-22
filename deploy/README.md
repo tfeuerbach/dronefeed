@@ -125,8 +125,11 @@ FRAME_ANCESTORS=*
 # Or restrict: FRAME_ANCESTORS=https://your-research-tool.example
 ```
 
-`EMBED_COOKIES=true` sets session + remember-me cookies to `SameSite=None; Secure`
-so login works in a cross-origin iframe. `FRAME_ANCESTORS` clears `X-Frame-Options`
+`EMBED_COOKIES=true` sets session + remember-me cookies to
+`SameSite=None; Secure; Partitioned` so login works in a cross-origin iframe
+under Chrome’s third-party cookie restrictions (CHIPS). Without `Partitioned`,
+browsers drop the session cookie in embeds → LiveView reconnect loops and
+inputs lose focus while typing. `FRAME_ANCESTORS` clears `X-Frame-Options`
 and emits `Content-Security-Policy: frame-ancestors …`.
 
 3. Embed:

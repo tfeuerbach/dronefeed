@@ -223,6 +223,25 @@ html.df-embed .df-shell::before {
 
 html.df-embed body {
   background-image: none;
+  /* Prefer the iframe box, not the top-level viewport — 100dvh overflows embeds. */
+  min-height: 100%;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html.df-embed {
+  height: 100%;
+}
+
+html.df-embed .df-shell {
+  min-height: 100%;
+}
+
+html.df-embed .df-nav {
+  position: sticky;
+  top: 0;
 }
 
 html.df-embed .df-main {
@@ -1067,9 +1086,10 @@ html.df-embed .df-reveal-item {
 }
 
 html.df-embed .df-main--auth {
-  min-height: calc(100dvh - 2.75rem);
+  /* Size to content — do not force a full viewport that overflows the iframe. */
+  min-height: 0;
   padding: 0.75rem 0.65rem 1rem;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 html.df-embed .df-auth {
@@ -1116,10 +1136,10 @@ html.df-embed .df-home-main {
 }
 
 html.df-embed .df-home-hero {
-  min-height: calc(100dvh - 3.5rem);
+  min-height: 0;
   padding: 1rem 0.25rem;
   gap: 1rem;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 html.df-embed .df-home-mark {
