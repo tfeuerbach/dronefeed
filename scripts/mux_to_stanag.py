@@ -2,7 +2,8 @@
 """Normalize flight assets into a single MPEG-TS with MISB ST 0601 KLV.
 
 Supported inputs:
-  - MPEG-TS / MPG that already has a data/KLV stream  → remux/copy
+  - Any container with an in-band data/KLV stream (``.ts``, ``.mpg``, ``.H264``,
+    ``.mp4`` that is actually MPEG-TS, etc.) → remux/copy (filename-agnostic)
   - Video + DJI .SRT telemetry sidecar                 → SRT→KLV→mux
   - Video + raw .klv sidecar                           → mux
 
@@ -195,6 +196,11 @@ def parse_dji_srt(path: Path) -> list[GpsCue]:
 
 
 def probe_has_data_stream(path: Path) -> bool:
+    """True when the file carries an in-band data/KLV elementary stream.
+
+    Detection is content-based (ffprobe), not filename — ``Truck.H264`` and
+    ``Esri_multiplexer_0.mp4`` are MPEG-TS with KLVA despite their extensions.
+    """
     try:
         out = subprocess.check_output(
             [
@@ -202,14 +208,41 @@ def probe_has_data_stream(path: Path) -> bool:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type",
+                "stream=codec_type,codec_name",
                 "-of",
                 "csv=p=0",
                 str(path),
             ],
             text=True,
         )
-        return any(line.strip() == "data" for line in out.splitlines())
+        for line in out.splitlines():
+            parts = [p.strip().lower() for p in line.split(",") if p.strip()]
+            if not parts:
+                continue
+            if "data" in parts or "klv" in parts:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def probe_is_mpegts(path: Path) -> bool:
+    """True when ffprobe reports an MPEG-TS container (ignore the file extension)."""
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=format_name",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            text=True,
+        ).strip().lower()
+        return "mpegts" in out
     except Exception:
         return False
 
@@ -579,8 +612,11 @@ def stamp_klva(path: Path) -> None:
 def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     ext = video.suffix.lower()
+    has_data = probe_has_data_stream(video)
+    is_ts = ext in TS_EXTS or probe_is_mpegts(video)
 
-    if ext in TS_EXTS and probe_has_data_stream(video) and not srt and not klv:
+    # In-band KLV/data wins over the filename — remux every stream as-is.
+    if has_data and not srt and not klv:
         remux_ts(video, output)
         stamp_klva(output)
         print(f"passthrough TS+data → {output}", file=sys.stderr)
@@ -607,7 +643,7 @@ def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None
         )
         return
 
-    if ext in TS_EXTS:
+    if is_ts:
         remux_ts(video, output)
         stamp_klva(output)
         print(f"remux TS (no extra metadata) → {output}", file=sys.stderr)

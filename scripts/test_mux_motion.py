@@ -15,11 +15,14 @@ sys.path.insert(0, str(ROOT))
 from mux_to_stanag import (  # noqa: E402
     GpsCue,
     bearing_deg,
+    build,
     encode_uas_packet,
     haversine_m,
     infer_motion,
     mux_video_with_timed_klv,
     parse_dji_srt,
+    probe_has_data_stream,
+    probe_is_mpegts,
     timed_klv_from_srt,
     write_klv_from_srt,
 )
@@ -178,6 +181,66 @@ class TimedKlvMuxTests(unittest.TestCase):
             self.assertEqual(len(pts), len(timed))
             self.assertGreater(pts[-1] - pts[0], 10.0)
             self.assertEqual(len({round(t, 3) for t in pts}), len(pts))
+
+
+class InbandDetectionTests(unittest.TestCase):
+    """Passthrough must follow streams, not the file extension."""
+
+    def test_truck_h264_is_mpegts_with_data(self) -> None:
+        truck = (
+            ROOT.parent
+            / "sample-data/enterprise-klv/QGISFMV_Samples/MISB/Truck.H264"
+        )
+        if not truck.exists():
+            self.skipTest("Truck.H264 sample not present")
+        self.assertTrue(probe_is_mpegts(truck))
+        self.assertTrue(probe_has_data_stream(truck))
+
+    def test_esri_multiplexer_mp4_is_mpegts_with_data(self) -> None:
+        clip = (
+            ROOT.parent
+            / "sample-data/enterprise-klv/QGISFMV_Samples/MISB/Esri_multiplexer_0.mp4"
+        )
+        if not clip.exists():
+            self.skipTest("Esri_multiplexer_0.mp4 sample not present")
+        self.assertTrue(probe_is_mpegts(clip))
+        self.assertTrue(probe_has_data_stream(clip))
+
+    def test_build_passthrough_keeps_klv_for_misnamed_truck(self) -> None:
+        truck = (
+            ROOT.parent
+            / "sample-data/enterprise-klv/QGISFMV_Samples/MISB/Truck.H264"
+        )
+        if not truck.exists():
+            self.skipTest("Truck.H264 sample not present")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "publish_stanag.ts"
+            # Symlink under a misleading name to prove extension is ignored.
+            alias = Path(tmp) / "not_a_ts.bin"
+            alias.symlink_to(truck.resolve())
+            build(alias, out, None, None)
+            self.assertTrue(probe_has_data_stream(out))
+            # Spot-check KLV volume survived the remux.
+            import subprocess
+
+            raw = subprocess.check_output(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(out),
+                    "-map",
+                    "0:d:0",
+                    "-c",
+                    "copy",
+                    "-f",
+                    "data",
+                    "-",
+                ],
+                stderr=subprocess.DEVNULL,
+            )
+            self.assertGreater(len(raw), 50_000)
 
 
 if __name__ == "__main__":

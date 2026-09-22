@@ -7,8 +7,8 @@ defmodule DroneFeed.Streaming.StanagMux do
 
   Consumer path: `mux_to_stanag.py` synthesizes ST 0601 from GPS cues and derives
   heading / ground / vertical speed from a short lookback window. Enterprise path
-  remuxes existing KLV unchanged. Cache invalidates when assets or the mux script
-  change (see `fresh?/2`).
+  remuxes existing in-band KLV unchanged (detected via ffprobe, not file extension).
+  Cache invalidates when assets or the mux script change (see `fresh?/2`).
   """
 
   require Logger

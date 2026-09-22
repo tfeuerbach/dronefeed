@@ -22,11 +22,42 @@ defmodule DroneFeed.Telemetry do
   defp klv_source?(%Flight{klv_path: path}) when is_binary(path), do: File.exists?(path)
 
   defp klv_source?(%Flight{video_path: path}) when is_binary(path) do
-    ext = path |> Path.extname() |> String.downcase()
-    ext in [".ts", ".mts", ".m2ts", ".mpg", ".mpeg"] and File.exists?(path)
+    File.exists?(path) and has_inband_klv?(path)
   end
 
   defp klv_source?(_), do: false
+
+  # Content-based: extension is irrelevant (.H264 / .mp4 can be MPEG-TS + KLV).
+  defp has_inband_klv?(path) do
+    case System.cmd(
+           "ffprobe",
+           [
+             "-v",
+             "error",
+             "-show_entries",
+             "stream=codec_type,codec_name",
+             "-of",
+             "csv=p=0",
+             path
+           ],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} ->
+        out
+        |> String.split(["\n", "\r"], trim: true)
+        |> Enum.any?(fn line ->
+          parts =
+            line
+            |> String.downcase()
+            |> String.split(",", trim: true)
+
+          "data" in parts or "klv" in parts
+        end)
+
+      _ ->
+        false
+    end
+  end
 
   def from_srt(path) when is_binary(path) do
     text = File.read!(path)
