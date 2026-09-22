@@ -10,7 +10,14 @@ defmodule DroneFeedWeb.SessionCookie do
   attribute (CHIPS) for cookies set inside cross-site iframes; without it
   the session cookie is dropped, LiveView reconnects in a loop, and form
   focus is lost on every remount.
+
+  Cookie name is versioned (`_drone_feed_key_v2`) so attribute changes
+  (e.g. adding Partitioned) do not fight a stale pre-CHIPS cookie that
+  browsers refuse to overwrite cleanly — which manifests as a login →
+  settings → login loop for sudo re-auth.
   """
+
+  @session_key "_drone_feed_key_v2"
 
   @doc """
   Options for `Plug.Session` and LiveView socket `connect_info`.
@@ -18,7 +25,7 @@ defmodule DroneFeedWeb.SessionCookie do
   def session_options do
     [
       store: :cookie,
-      key: "_drone_feed_key",
+      key: @session_key,
       signing_salt: "KTmKCYQz",
       same_site: same_site(),
       secure: secure?()

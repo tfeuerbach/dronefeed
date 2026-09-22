@@ -1005,6 +1005,53 @@ html.df-embed .df-reveal-item {
   color: color-mix(in oklch, white 55%, transparent);
 }
 
+.df-settings {
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+.df-api-tokens {
+  width: 100%;
+}
+
+.df-api-token-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+}
+
+.df-api-token-form-field {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.df-api-token-form-field .fieldset {
+  margin-bottom: 0;
+}
+
+.df-api-token-form-submit {
+  flex: 0 0 auto;
+  min-height: var(--size-field, 2.5rem);
+  margin-bottom: 0;
+}
+
+.df-api-token-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
+.df-api-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
 .df-api-token-reveal {
   padding: 0.85rem 1rem;
   border-radius: var(--radius-box);

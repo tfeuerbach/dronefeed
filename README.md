@@ -14,7 +14,7 @@
 
 - **Phoenix (Elixir)** — auth, flights UI, live sessions, MediaMTX auth webhook, FFmpeg supervision, 5-day retention
 - **MediaMTX** — SRT `:8890` (MPEG-TS + KLV ingest/pull), RTSP `:8554`, RTMP `:1935`; UDP `:8900–8999` for live drone ingest
-- **FFmpeg** — when Public feed is on, loops a live-style 1080p Main H.264 + KLV
+- **FFmpeg** — when Public feed is on, loops a live-style 720p Main H.264 + KLV
   MPEG-TS into MediaMTX over **SRT** (distribution encode; full-quality source stays on disk)
 - **Caddy** — HTTPS (Let's Encrypt) in front of Phoenix
 - **Postgres** — users, flights, live sessions
@@ -73,7 +73,7 @@ Upload video + optional .srt / .klv
         → [Public feed OFF] UI map/preview only; no MediaMTX path
         → [Public feed ON]
               mux_to_stanag.py → publish_stanag.ts (cached; rebuilds if assets or mux script change)
-              FFmpeg distribution encode (≈4 Mbps CBR-ish 1080p) + KLV copy
+              FFmpeg distribution encode (≈2.5 Mbps CBR-ish 720p; `PUBLISH_VIDEO_*`) + KLV copy
               → MediaMTX publish:vod/<id>
               → pull SRT / RTSP / RTMP capability URLs (+ HTTP .srt/.klv sidecars)
 ```
@@ -89,7 +89,7 @@ Upload video + optional .srt / .klv
 
 ### HTTP API (API tokens)
 
-Create a token under **Account settings** (shown once). Then:
+Create a token under **Account settings** (shown once; max 2 per account, expire after 1 year). Then:
 
 ```bash
 export DF_TOKEN='df_…'   # from settings
@@ -124,7 +124,7 @@ curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/live"
 
 UDP ingest has no stream key on the wire — treat the allocated port as sensitive and tighten the security group when you can.
 
-**Sizing:** 4K ~100 Mbps multi-reader SRT needs about **8 vCPU** (e.g. `c7i.2xlarge`). See [deploy/README.md](deploy/README.md#minimum-instance-architecture).
+**Sizing:** ≤4 public feeds @720p → **`c7i.2xlarge`**; more than 4 concurrent public feeds (or several @1080p) → **`c7i.4xlarge` or larger**. See [deploy/README.md](deploy/README.md#minimum-instance-architecture).
 
 ## Quick start (dev)
 

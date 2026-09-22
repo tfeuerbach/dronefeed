@@ -20,6 +20,7 @@ defmodule DroneFeed.FlightsTest do
              Flights.create_flight(scope, %{"name" => "Sortie A"}, %{video: video, srt: srt})
 
     assert flight.name == "Sortie A"
+    assert flight.slug == "sortie-a"
     assert flight.publishing == false
     assert File.exists?(flight.video_path)
     assert File.exists?(flight.srt_path)

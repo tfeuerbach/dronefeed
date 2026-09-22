@@ -6,6 +6,7 @@ defmodule DroneFeed.Flights.Flight do
   @foreign_key_type :binary_id
   schema "flights" do
     field :name, :string
+    field :slug, :string
     field :video_path, :string
     field :srt_path, :string
     field :klv_path, :string
@@ -23,6 +24,7 @@ defmodule DroneFeed.Flights.Flight do
     flight
     |> cast(attrs, [
       :name,
+      :slug,
       :video_path,
       :srt_path,
       :klv_path,
@@ -32,11 +34,20 @@ defmodule DroneFeed.Flights.Flight do
       :expires_at,
       :user_id
     ])
-    |> validate_required([:name, :video_path, :stream_key, :expires_at, :user_id])
+    |> validate_required([:name, :slug, :video_path, :stream_key, :expires_at, :user_id])
+    |> validate_format(:slug, ~r/^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      message: "must be a URL-safe slug"
+    )
     |> unique_constraint(:stream_key)
+    |> unique_constraint(:slug)
   end
 
   def publish_changeset(flight, publishing) when is_boolean(publishing) do
     change(flight, publishing: publishing)
   end
+end
+
+defimpl Phoenix.Param, for: DroneFeed.Flights.Flight do
+  def to_param(%{slug: slug}) when is_binary(slug) and slug != "", do: slug
+  def to_param(%{id: id}), do: to_string(id)
 end

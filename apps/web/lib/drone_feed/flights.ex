@@ -11,8 +11,11 @@ defmodule DroneFeed.Flights do
   alias DroneFeed.Accounts.Scope
   alias DroneFeed.Flights.BrowserPreview
   alias DroneFeed.Flights.Flight
+  alias DroneFeed.Flights.Slug
   alias DroneFeed.Repo
   alias DroneFeed.Streaming.PublisherSupervisor
+
+  @uuid_re ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
   @doc """
   Lists all non-expired flights (shared library).
@@ -25,6 +28,7 @@ defmodule DroneFeed.Flights do
     |> order_by([f], desc: f.inserted_at)
     |> preload(:user)
     |> Repo.all()
+    |> Enum.map(&ensure_name_slug/1)
   end
 
   @doc """
@@ -38,15 +42,23 @@ defmodule DroneFeed.Flights do
     |> order_by([f], desc: f.updated_at)
     |> preload(:user)
     |> Repo.all()
+    |> Enum.map(&ensure_name_slug/1)
   end
 
-  def get_flight!(%Scope{}, id) do
+  @doc """
+  Fetch a non-expired flight by URL param — slug preferred, UUID still accepted.
+  """
+  def get_flight!(%Scope{}, param) when is_binary(param) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    Flight
-    |> where([f], f.id == ^id and f.expires_at > ^now)
-    |> preload(:user)
-    |> Repo.one!()
+    flight =
+      Flight
+      |> where([f], f.expires_at > ^now)
+      |> where(^flight_param_filter(param))
+      |> preload(:user)
+      |> Repo.one!()
+
+    ensure_name_slug(flight)
   end
 
   def get_flight(id) when is_binary(id), do: Repo.get(Flight, id)
@@ -70,13 +82,17 @@ defmodule DroneFeed.Flights do
 
     stream_key = generate_stream_key()
     id = Ecto.UUID.generate()
+    name = Map.get(attrs, "name") || Map.get(attrs, :name) || "Flight"
+    slug = Slug.unique(name)
 
     with {:ok, paths} <- persist_files(user.id, id, files) do
       result =
         %Flight{id: id}
         |> Flight.changeset(
-          Map.merge(attrs, %{
+          Map.merge(stringify_keys(attrs), %{
             "user_id" => user.id,
+            "name" => name,
+            "slug" => slug,
             "stream_key" => stream_key,
             "expires_at" => expires_at,
             "video_path" => paths.video_path,
@@ -172,6 +188,53 @@ defmodule DroneFeed.Flights do
     |> where([f], f.publishing == true)
     |> Repo.all()
     |> Enum.each(&PublisherSupervisor.start_publisher/1)
+  end
+
+  @doc """
+  True when `param` looks like a flight UUID (legacy URLs).
+  """
+  def uuid_param?(param) when is_binary(param), do: Regex.match?(@uuid_re, param)
+  def uuid_param?(_), do: false
+
+  defp flight_param_filter(param) do
+    if uuid_param?(param) do
+      dynamic([f], f.id == ^param)
+    else
+      dynamic([f], f.slug == ^param)
+    end
+  end
+
+  # Rewrite migration placeholders (32-char hex from UUID) to name-based slugs once.
+  defp ensure_name_slug(%Flight{name: name, slug: slug} = flight)
+       when is_binary(name) and is_binary(slug) do
+    if placeholder_slug?(slug) do
+      new_slug = Slug.unique(name, exclude_id: flight.id)
+
+      case flight
+           |> Ecto.Changeset.change(%{slug: new_slug})
+           |> Ecto.Changeset.unique_constraint(:slug)
+           |> Repo.update() do
+        {:ok, updated} ->
+          Repo.preload(updated, :user)
+
+        {:error, _} ->
+          # Concurrent rewrite or rare collision — serve with current row.
+          flight
+      end
+    else
+      flight
+    end
+  end
+
+  defp ensure_name_slug(flight), do: flight
+
+  defp placeholder_slug?(slug), do: Regex.match?(~r/\A[0-9a-f]{32}\z/i, slug)
+
+  defp stringify_keys(attrs) when is_map(attrs) do
+    Map.new(attrs, fn
+      {k, v} when is_atom(k) -> {Atom.to_string(k), v}
+      {k, v} -> {k, v}
+    end)
   end
 
   defp persist_files(user_id, flight_id, %{video: video} = files) do

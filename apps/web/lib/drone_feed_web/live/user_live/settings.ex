@@ -10,7 +10,7 @@ defmodule DroneFeedWeb.UserLive.Settings do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="df-auth space-y-8">
+      <div class="df-settings space-y-8">
         <.header>
           Account settings
           <:subtitle>
@@ -64,14 +64,15 @@ defmodule DroneFeedWeb.UserLive.Settings do
           </.form>
         </div>
 
-        <div class="df-panel space-y-4">
+        <div class="df-panel df-api-tokens space-y-5">
           <div class="space-y-1">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/50">
               API tokens
             </h2>
             <p class="text-sm text-base-content/60">
-              Programmatic access for curl / wget / scripts. Tokens authenticate as your account
-              against <span class="font-mono text-xs">/api/v1/*</span>.
+              Programmatic access for curl / wget / scripts against
+              <span class="font-mono text-xs">/api/v1/*</span>.
+              Up to {@max_tokens} tokens per account · each expires after 1 year.
             </p>
           </div>
 
@@ -103,36 +104,58 @@ defmodule DroneFeedWeb.UserLive.Settings do
           </div>
 
           <.form
+            :if={length(@api_tokens) < @max_tokens}
             for={@token_form}
             id="api-token-form"
             phx-submit="create_api_token"
             phx-change="validate_api_token"
-            class="flex flex-wrap items-end gap-3"
+            class="df-api-token-form"
           >
-            <div class="min-w-[12rem] flex-1">
-              <.input field={@token_form[:name]} type="text" label="Token name" placeholder="CI laptop" required />
+            <div class="df-api-token-form-field">
+              <.input
+                field={@token_form[:name]}
+                type="text"
+                label="Token name"
+                placeholder="CI laptop"
+                required
+                class="w-full input"
+              />
             </div>
-            <.button variant="primary" phx-disable-with="Creating…">Create token</.button>
+            <.button
+              variant="primary"
+              class="btn btn-primary df-api-token-form-submit"
+              phx-disable-with="Creating…"
+            >
+              Create token
+            </.button>
           </.form>
+          <p
+            :if={length(@api_tokens) >= @max_tokens}
+            class="text-sm text-base-content/55"
+          >
+            Token limit reached ({@max_tokens}). Revoke one to create another.
+          </p>
 
-          <ul :if={@api_tokens != []} class="divide-y divide-base-content/10">
+          <ul :if={@api_tokens != []} class="df-api-token-list">
             <li
               :for={token <- @api_tokens}
               id={"api-token-#{token.id}"}
-              class="flex flex-wrap items-center justify-between gap-3 py-3"
+              class="df-api-token-row"
             >
-              <div class="min-w-0 space-y-0.5">
+              <div class="min-w-0 flex-1 space-y-0.5">
                 <p class="truncate font-medium">{token.name}</p>
                 <p class="font-mono text-xs text-base-content/50">
                   {token.prefix}… · created {Calendar.strftime(token.inserted_at, "%Y-%m-%d")}
+                  · expires {Calendar.strftime(token.expires_at, "%Y-%m-%d")}
                   <span :if={token.last_used_at}>
                     · last used {Calendar.strftime(token.last_used_at, "%Y-%m-%d %H:%M")}
                   </span>
+                  <span :if={ApiToken.expired?(token)} class="text-error"> · expired</span>
                 </p>
               </div>
               <button
                 type="button"
-                class="btn btn-ghost btn-sm text-error"
+                class="btn btn-ghost btn-sm text-error shrink-0"
                 phx-click="revoke_api_token"
                 phx-value-id={token.id}
                 data-confirm={"Revoke token “#{token.name}”? Scripts using it will stop working."}
@@ -172,6 +195,7 @@ defmodule DroneFeedWeb.UserLive.Settings do
      |> assign(:api_tokens, Accounts.list_api_tokens(user))
      |> assign(:token_form, to_form(Accounts.change_api_token(%ApiToken{})))
      |> assign(:new_token_plaintext, nil)
+     |> assign(:max_tokens, ApiToken.max_per_user())
      |> assign(:api_base, api_base())
      |> assign_api_examples()}
   end
@@ -238,6 +262,14 @@ defmodule DroneFeedWeb.UserLive.Settings do
          |> assign(:token_form, to_form(Accounts.change_api_token(%ApiToken{})))
          |> assign(:new_token_plaintext, token.plaintext)
          |> put_flash(:info, "API token created — copy it now")}
+
+      {:error, :limit_reached} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You can have at most #{ApiToken.max_per_user()} API tokens. Revoke one first."
+         )}
 
       {:error, changeset} ->
         {:noreply, assign(socket, token_form: to_form(changeset, action: :insert))}

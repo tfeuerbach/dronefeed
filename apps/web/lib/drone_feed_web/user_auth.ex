@@ -10,7 +10,7 @@ defmodule DroneFeedWeb.UserAuth do
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
   @max_cookie_age_in_days 14
-  @remember_me_cookie "_drone_feed_web_user_remember_me"
+  @remember_me_cookie "_drone_feed_web_user_remember_me_v2"
 
   # How old the session token should be before a new one is issued. When a request is made
   # with a session token older than this value, then a new session token will be created
@@ -29,6 +29,11 @@ defmodule DroneFeedWeb.UserAuth do
   """
   def log_in_user(conn, user, params \\ %{}) do
     user_return_to = get_session(conn, :user_return_to)
+
+    # Password / explicit login always starts a fresh sudo window. Do not reuse
+    # authenticated_at from an existing session scope (token reissue preserves it
+    # on purpose; interactive login must not).
+    user = %{user | authenticated_at: DateTime.utc_now(:second)}
 
     conn
     |> create_or_extend_session(user, params)
@@ -107,11 +112,45 @@ defmodule DroneFeedWeb.UserAuth do
   defp create_or_extend_session(conn, user, params) do
     token = Accounts.generate_user_session_token(user)
     remember_me = get_session(conn, :user_remember_me)
+    # Interactive login (password form) always renews so the session cookie
+    # and CSRF are rewritten — required after cookie attribute changes and
+    # for sudo re-auth while already logged in.
+    force_renew? = is_map(params) and (Map.has_key?(params, "password") or Map.has_key?(params, :password))
 
     conn
-    |> renew_session(user)
+    |> then(fn conn ->
+      if force_renew?, do: force_renew_session(conn), else: renew_session(conn, user)
+    end)
     |> put_token_in_session(token)
     |> maybe_write_remember_me_cookie(token, params, remember_me)
+  end
+
+  defp force_renew_session(conn) do
+    delete_csrf_token()
+
+    preferred_return = get_session(conn, :user_return_to)
+    remember = get_session(conn, :user_remember_me)
+
+    conn
+    |> configure_session(renew: true)
+    |> clear_session()
+    |> then(fn conn ->
+      cond do
+        preferred_return && remember ->
+          conn
+          |> put_session(:user_return_to, preferred_return)
+          |> put_session(:user_remember_me, remember)
+
+        preferred_return ->
+          put_session(conn, :user_return_to, preferred_return)
+
+        remember ->
+          put_session(conn, :user_remember_me, remember)
+
+        true ->
+          conn
+      end
+    end)
   end
 
   # Do not renew session if the user is already logged in
@@ -248,8 +287,9 @@ defmodule DroneFeedWeb.UserAuth do
 
   def on_mount(:require_sudo_mode, _params, session, socket) do
     socket = mount_current_scope(socket, session)
+    user = socket.assigns.current_scope && socket.assigns.current_scope.user
 
-    if Accounts.sudo_mode?(socket.assigns.current_scope.user, -10) do
+    if user && Accounts.sudo_mode?(user, -10) do
       {:cont, socket}
     else
       socket =

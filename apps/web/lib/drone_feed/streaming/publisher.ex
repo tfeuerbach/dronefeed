@@ -9,8 +9,9 @@ defmodule DroneFeed.Streaming.Publisher do
   Gladius and other HLS clients sit on Connecting forever.
 
   Instead FFmpeg loops a **distribution encode**: Main (or Baseline) Annex-B
-  H.264 with SPS/PPS on IDRs about every 1–2s, default 1080p, and copies the
-  KLV data track. MediaMTX re-serves that as SRT/RTSP/RTMP/HLS.
+  H.264 with SPS/PPS on IDRs about every 1–2s, default 720p (see
+  `PUBLISH_VIDEO_HEIGHT`), and copies the KLV data track. MediaMTX re-serves
+  that as SRT/RTSP/RTMP/HLS.
   """
 
   use GenServer
@@ -315,7 +316,7 @@ defmodule DroneFeed.Streaming.Publisher do
 
   # nil height = keep source resolution (still re-encodes for live-style IDRs).
   defp publish_height do
-    case Application.get_env(:drone_feed, :publish_video_height, 1080) do
+    case Application.get_env(:drone_feed, :publish_video_height, 720) do
       nil -> nil
       0 -> nil
       "0" -> nil
@@ -324,20 +325,20 @@ defmodule DroneFeed.Streaming.Publisher do
       h when is_binary(h) ->
         case Integer.parse(h) do
           {n, _} when n > 0 -> n
-          _ -> 1080
+          _ -> 720
         end
-      _ -> 1080
+      _ -> 720
     end
   end
 
   defp publish_video_bitrate,
-    do: Application.get_env(:drone_feed, :publish_video_bitrate, "4M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_bitrate, "2.5M") |> to_string()
 
   defp publish_video_maxrate,
-    do: Application.get_env(:drone_feed, :publish_video_maxrate, "4M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_maxrate, "2.5M") |> to_string()
 
   defp publish_video_bufsize,
-    do: Application.get_env(:drone_feed, :publish_video_bufsize, "8M") |> to_string()
+    do: Application.get_env(:drone_feed, :publish_video_bufsize, "5M") |> to_string()
 
   defp publish_gop do
     case Application.get_env(:drone_feed, :publish_gop, 30) do

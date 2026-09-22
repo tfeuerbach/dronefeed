@@ -38,6 +38,7 @@ defmodule DroneFeedWeb.Api.V1.FlightsControllerTest do
     assert Enum.any?(data, &(&1["id"] == flight.id))
     item = Enum.find(data, &(&1["id"] == flight.id))
     assert item["name"] == "Sortie API"
+    assert item["slug"] == "sortie-api"
     assert item["publishing"] == false
     assert item["urls"] == nil
   end
@@ -62,14 +63,23 @@ defmodule DroneFeedWeb.Api.V1.FlightsControllerTest do
     assert is_list(live)
   end
 
-  test "show flight", %{conn: conn, plaintext: plaintext, flight: flight} do
-    conn =
+  test "show flight by id or slug", %{conn: conn, plaintext: plaintext, flight: flight} do
+    by_id =
       conn
       |> put_req_header("authorization", "Bearer #{plaintext}")
       |> get(~p"/api/v1/flights/#{flight.id}")
 
-    assert %{"data" => %{"id" => id, "type" => "flight"}} = json_response(conn, 200)
+    assert %{"data" => %{"id" => id, "slug" => "sortie-api", "type" => "flight"}} =
+             json_response(by_id, 200)
+
     assert id == flight.id
+
+    by_slug =
+      conn
+      |> put_req_header("authorization", "Bearer #{plaintext}")
+      |> get(~p"/api/v1/flights/#{flight.slug}")
+
+    assert json_response(by_slug, 200)["data"]["id"] == flight.id
   end
 
   test "includes pull urls when publishing", %{

@@ -118,16 +118,16 @@ if config_env() == :prod do
     ffmpeg_path: System.get_env("FFMPEG_PATH") || System.find_executable("ffmpeg") || "ffmpeg",
     retention_days: String.to_integer(System.get_env("RETENTION_DAYS") || "5"),
     show_dev_login_hint: false,
-    admin_contact:
-      System.get_env("ADMIN_CONTACT") || "your system administrator",
+    admin_contact: System.get_env("ADMIN_CONTACT") || "admin@example.com",
     mux_script: System.get_env("MUX_SCRIPT") || "/app/scripts/mux_to_stanag.py",
     extract_klv_script:
       System.get_env("EXTRACT_KLV_SCRIPT") || "/app/scripts/extract_klv_track.py",
     python_path: System.get_env("PYTHON_PATH") || System.find_executable("python3") || "python3",
-    publish_video_height: System.get_env("PUBLISH_VIDEO_HEIGHT") || "1080",
-    publish_video_bitrate: System.get_env("PUBLISH_VIDEO_BITRATE") || "4M",
-    publish_video_maxrate: System.get_env("PUBLISH_VIDEO_MAXRATE") || "4M",
-    publish_video_bufsize: System.get_env("PUBLISH_VIDEO_BUFSIZE") || "8M",
+    # Public feed distribution encode. Height: pixels (e.g. 720, 1080) or 0/source = keep source.
+    publish_video_height: System.get_env("PUBLISH_VIDEO_HEIGHT") || "720",
+    publish_video_bitrate: System.get_env("PUBLISH_VIDEO_BITRATE") || "2.5M",
+    publish_video_maxrate: System.get_env("PUBLISH_VIDEO_MAXRATE") || "2.5M",
+    publish_video_bufsize: System.get_env("PUBLISH_VIDEO_BUFSIZE") || "5M",
     publish_gop: System.get_env("PUBLISH_GOP") || "30",
     publish_x264_preset: System.get_env("PUBLISH_X264_PRESET") || "veryfast",
     publish_x264_profile: System.get_env("PUBLISH_X264_PROFILE") || "main",
@@ -170,7 +170,7 @@ if config_env() == :prod do
   mail_from_address =
     System.get_env("SMTP_FROM_EMAIL") ||
       System.get_env("MAIL_FROM_ADDRESS") ||
-      "dronefeed@tfeuerbach.dev"
+      "noreply@example.com"
 
   config :drone_feed, mail_from: {mail_from_name, mail_from_address}
 

@@ -16,10 +16,11 @@
 RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
 
 - **Recorded Public feed** loops a **live-style distribution encode** (default
-  1080p Main H.264, IDR ~1s, KLV copied) over **SRT** into MediaMTX
-  (`publish:vod/<id>`), then re-serves SRT/RTSP/RTMP/HLS. Full-quality source
-  stays on disk; `-c copy` of 4K High into MediaMTX is avoided because SRT/HLS
-  remux often yields H264 with no SPS/PPS (`0×0`) and players hang on Connecting.
+  720p Main H.264 via `PUBLISH_VIDEO_HEIGHT`, IDR ~1s, KLV copied) over **SRT**
+  into MediaMTX (`publish:vod/<id>`), then re-serves SRT/RTSP/RTMP/HLS.
+  Full-quality source stays on disk; `-c copy` of 4K High into MediaMTX is
+  avoided because SRT/HLS remux often yields H264 with no SPS/PPS (`0×0`) and
+  players hang on Connecting.
 - **Live Drone UDP** uses ports from `UDP_INGEST_PORT_MIN`–`MAX` (default 8900–8999), one port per session.
 
 **Pull access:** capability URLs only (token embedded). Copy from the UI; do not ask tools for a separate username/password.
@@ -33,9 +34,11 @@ RTMP/RTSP/SRT share fixed listeners (`/vod/<id>`, `/live/<id>`).
   like `pkt_size` / µs latency / huge `rcvbuf` belong on the client CLI, not this
   capability URL.)
 
-Public VOD republish defaults to a **CBR-ish 4 Mbps 1080p Main** encode (`PUBLISH_VIDEO_*`)
-so SRT pulls stay smoother than peaky VBR. Toggle Public feed off/on after changing
-those env vars so FFmpeg restarts.
+Public VOD republish defaults to a **CBR-ish ~2.5 Mbps 720p Main** encode
+(`PUBLISH_VIDEO_HEIGHT`, `PUBLISH_VIDEO_BITRATE`, …). Set
+`PUBLISH_VIDEO_HEIGHT=1080` (and raise bitrate) for higher quality, or `0` /
+`source` to keep source resolution (still re-encodes for IDRs). Toggle Public
+feed off/on after changing those env vars so FFmpeg restarts.
 
 **Phone / Mavic live:** Custom RTMP publish uses the same query form on `/live/<id>` (video/AAC only). The Flights UI plays a same-origin HLS preview at `https://PHX_HOST/hls/live/<id>/index.m3u8` (Caddy → MediaMTX `:8888`). Expect a few seconds of delay (phone keyframe interval + HLS); RTSP/SRT pulls are closer to real time.
 
@@ -51,16 +54,21 @@ Phoenix listens on `:4000` **inside** the Docker network only; Caddy terminates 
 
 ## Minimum instance (architecture)
 
-Public feed defaults to a ~4 Mbps CBR-ish 1080p encode (see `PUBLISH_VIDEO_*`). That
-keeps MediaMTX remux / research-tool SRT pulls healthier than peaky VBR. Raising
-`PUBLISH_VIDEO_HEIGHT=0` (source resolution) still re-encodes for IDRs; do not expect
+Public feed defaults to a ~2.5 Mbps CBR-ish **720p** encode (see `PUBLISH_VIDEO_*`).
+That keeps MediaMTX remux / research-tool SRT pulls healthier than peaky VBR while
+leaving CPU headroom for several concurrent publishers. Each public feed is a
+continuous `libx264` re-encode — **CPU**, not NIC bandwidth, is usually the limit.
+
+`PUBLISH_VIDEO_HEIGHT` controls output height (`720`, `1080`, …). Use `0` or
+`source` to keep source resolution (still re-encodes for IDRs); do not expect
 `-c copy` 4K to be playable over SRT/HLS on MediaMTX.
 
 | Workload | Minimum | Notes |
 |----------|---------|--------|
-| HD / ≤~20 Mbps, 1–2 readers | `c7i.xlarge` (4 vCPU, 8 GB) | Acceptable for light demos |
-| **4K ~100 Mbps, multi-reader SRT** (production) | **`c7i.2xlarge` (8 vCPU, 16 GB)** | Current prod target; keep headroom for concurrent pulls |
-| Heavier fan-out / several 4K feeds | `c7i.4xlarge`+ | Scale with Σ(bitrate × readers) |
+| 1–2 public feeds @720p, light demos | `c7i.xlarge` (4 vCPU, 8 GB) | Acceptable for light demos |
+| **≤4 public feeds @720p** (typical prod) | **`c7i.2xlarge` (8 vCPU, 16 GB)** | Current prod target; leave headroom for UI + MediaMTX |
+| **>4 concurrent public feeds**, or several @1080p | **`c7i.4xlarge` (16 vCPU) or larger** | Scale with Σ(encode cost × feeds); prefer this over packing more 1080p encodes onto 2xlarge |
+| High fan-out / many SRT readers on fat sources | `c7i.4xlarge`+ | Scale with Σ(bitrate × readers) as well as encode count |
 
 Also:
 

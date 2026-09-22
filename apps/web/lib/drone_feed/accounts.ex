@@ -209,7 +209,7 @@ defmodule DroneFeed.Accounts do
   def reject_account(%User{} = admin, %User{} = user) do
     unless User.admin?(admin), do: raise("only admins can reject accounts")
 
-    contact = Application.get_env(:drone_feed, :admin_contact, "your system administrator")
+    contact = Application.get_env(:drone_feed, :admin_contact, "admin@example.com")
 
     user
     |> User.reject_changeset()
@@ -430,26 +430,48 @@ defmodule DroneFeed.Accounts do
   @doc """
   Creates an API token for the user. Returns `{:ok, api_token}` where
   `api_token.plaintext` is set once — store it; only the hash is persisted.
+
+  At most #{ApiToken.max_per_user()} tokens per user; each expires after
+  #{ApiToken.retention_days()} days.
   """
   def create_api_token(%User{} = user, attrs) when is_map(attrs) do
-    raw = @api_token_prefix <> Base.url_encode64(:crypto.strong_rand_bytes(@api_token_bytes), padding: false)
-    prefix = String.slice(raw, 0, 11)
-    hash = :crypto.hash(:sha256, raw)
+    count = count_api_tokens(user)
 
-    %ApiToken{}
-    |> ApiToken.changeset(attrs)
-    |> Ecto.Changeset.put_change(:user_id, user.id)
-    |> Ecto.Changeset.put_change(:prefix, prefix)
-    |> Ecto.Changeset.put_change(:token_hash, hash)
-    |> Repo.insert()
-    |> case do
-      {:ok, token} -> {:ok, %{token | plaintext: raw}}
-      error -> error
+    if count >= ApiToken.max_per_user() do
+      {:error, :limit_reached}
+    else
+      raw =
+        @api_token_prefix <>
+          Base.url_encode64(:crypto.strong_rand_bytes(@api_token_bytes), padding: false)
+
+      prefix = String.slice(raw, 0, 11)
+      hash = :crypto.hash(:sha256, raw)
+
+      expires_at =
+        DateTime.utc_now(:second)
+        |> DateTime.add(ApiToken.retention_days() * 24 * 3600, :second)
+
+      %ApiToken{}
+      |> ApiToken.changeset(attrs)
+      |> Ecto.Changeset.put_change(:user_id, user.id)
+      |> Ecto.Changeset.put_change(:prefix, prefix)
+      |> Ecto.Changeset.put_change(:token_hash, hash)
+      |> Ecto.Changeset.put_change(:expires_at, expires_at)
+      |> Repo.insert()
+      |> case do
+        {:ok, token} -> {:ok, %{token | plaintext: raw}}
+        error -> error
+      end
     end
   end
 
   def change_api_token(%ApiToken{} = token, attrs \\ %{}) do
     ApiToken.changeset(token, attrs)
+  end
+
+  def count_api_tokens(%User{id: user_id}) do
+    from(t in ApiToken, where: t.user_id == ^user_id)
+    |> Repo.aggregate(:count)
   end
 
   def list_api_tokens(%User{id: user_id}) do
@@ -473,13 +495,15 @@ defmodule DroneFeed.Accounts do
 
   @doc """
   Looks up an active user by plaintext API token. Updates `last_used_at` best-effort.
+  Expired tokens are rejected.
   """
   def get_user_by_api_token(plaintext) when is_binary(plaintext) do
     hash = :crypto.hash(:sha256, plaintext)
+    now = DateTime.utc_now(:second)
 
     case from(t in ApiToken,
            join: u in assoc(t, :user),
-           where: t.token_hash == ^hash,
+           where: t.token_hash == ^hash and t.expires_at > ^now,
            select: {u, t}
          )
          |> Repo.one() do

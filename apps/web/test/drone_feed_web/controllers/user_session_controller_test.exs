@@ -39,7 +39,7 @@ defmodule DroneFeedWeb.UserSessionControllerTest do
           }
         })
 
-      assert conn.resp_cookies["_drone_feed_web_user_remember_me"]
+      assert conn.resp_cookies["_drone_feed_web_user_remember_me_v2"]
       assert redirected_to(conn) == ~p"/flights"
     end
 

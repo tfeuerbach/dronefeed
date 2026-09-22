@@ -86,7 +86,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
                   controls
                   playsinline
                   preload="metadata"
-                  src={~p"/flights/#{@flight.id}/media"}
+                  src={~p"/flights/#{@flight}/media"}
                 >
                 </video>
               </div>
@@ -242,6 +242,16 @@ defmodule DroneFeedWeb.FlightLive.Show do
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
     flight = Flights.get_flight!(scope, id)
+
+    # Legacy UUID bookmarks → canonical name slug.
+    if connected?(socket) and Flights.uuid_param?(id) and flight.slug not in [nil, "", id] do
+      {:ok, push_navigate(socket, to: ~p"/flights/#{flight}", replace: true)}
+    else
+      mount_flight(socket, scope, flight)
+    end
+  end
+
+  defp mount_flight(socket, scope, flight) do
     telemetry = Telemetry.for_flight(flight)
     stats = telemetry.stats
 

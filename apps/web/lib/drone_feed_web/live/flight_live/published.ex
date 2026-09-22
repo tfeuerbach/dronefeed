@@ -57,7 +57,7 @@ defmodule DroneFeedWeb.FlightLive.Published do
       <div id="public-gallery" class="df-gallery mt-8">
         <.link
           :for={flight <- @flights}
-          navigate={~p"/flights/#{flight.id}"}
+          navigate={~p"/flights/#{flight}"}
           id={"public-#{flight.id}"}
           class="df-gallery-card group"
         >
@@ -67,7 +67,7 @@ defmodule DroneFeedWeb.FlightLive.Published do
               muted
               playsinline
               preload="metadata"
-              src={~p"/flights/#{flight.id}/media"}
+              src={~p"/flights/#{flight}/media"}
             >
             </video>
             <span class="df-gallery-live">

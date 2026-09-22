@@ -85,7 +85,7 @@ defmodule DroneFeedWeb.UserLive.Login do
      |> assign(:show_dev_login_hint, Application.get_env(:drone_feed, :show_dev_login_hint, false))
      |> assign(
        :admin_contact,
-       Application.get_env(:drone_feed, :admin_contact, "your system administrator")
+       Application.get_env(:drone_feed, :admin_contact, "admin@example.com")
      )}
   end
 

@@ -259,7 +259,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   <div class="flex items-center gap-2">
                     <span :if={flight.publishing} class="df-live-dot" title="Public feed"></span>
                     <.link
-                      navigate={~p"/flights/#{flight.id}"}
+                      navigate={~p"/flights/#{flight}"}
                       class="truncate font-medium hover:text-primary"
                     >
                       {flight.name}
@@ -274,7 +274,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   </p>
                 </div>
                 <div class="flex items-center gap-3">
-                  <.link navigate={~p"/flights/#{flight.id}"} class="btn btn-ghost btn-sm">
+                  <.link navigate={~p"/flights/#{flight}"} class="btn btn-ghost btn-sm">
                     Open
                   </.link>
                   <label
@@ -411,7 +411,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
             {:noreply,
              socket
              |> put_flash(:info, "Flight uploaded")
-             |> push_navigate(to: ~p"/flights/#{flight.id}")}
+             |> push_navigate(to: ~p"/flights/#{flight}")}
 
           {:error, %Ecto.Changeset{} = changeset} ->
             {:noreply, assign(socket, form: to_form(changeset))}

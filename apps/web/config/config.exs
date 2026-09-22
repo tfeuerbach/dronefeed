@@ -109,10 +109,10 @@ config :drone_feed,
   extract_klv_script: Path.expand("../../../scripts/extract_klv_track.py", __DIR__),
   python_path: System.find_executable("python3") || "python3",
   # Public-feed distribution encode — CBR-ish CFR for smooth SRT pulls.
-  publish_video_height: 1080,
-  publish_video_bitrate: "4M",
-  publish_video_maxrate: "4M",
-  publish_video_bufsize: "8M",
+  publish_video_height: 720,
+  publish_video_bitrate: "2.5M",
+  publish_video_maxrate: "2.5M",
+  publish_video_bufsize: "5M",
   publish_gop: 30,
   publish_x264_preset: "veryfast",
   publish_x264_profile: "main",
@@ -121,8 +121,8 @@ config :drone_feed,
   session_cookie_secure: false,
   frame_ancestors: nil,
   show_dev_login_hint: false,
-  admin_contact: "your system administrator",
-  mail_from: {"DroneFeed", "dronefeed@tfeuerbach.dev"}
+  admin_contact: "admin@example.com",
+  mail_from: {"DroneFeed", "noreply@example.com"}
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

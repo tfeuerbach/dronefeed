@@ -20,6 +20,7 @@ defmodule DroneFeedWeb.Api.V1.JSON do
       id: flight.id,
       type: "flight",
       name: flight.name,
+      slug: flight.slug,
       original_video_name: flight.original_video_name,
       publishing: flight.publishing,
       expires_at: flight.expires_at,

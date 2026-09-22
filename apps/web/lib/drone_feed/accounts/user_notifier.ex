@@ -17,7 +17,7 @@ defmodule DroneFeed.Accounts.UserNotifier do
   @body "#C5CED8"
 
   defp mail_from do
-    Application.get_env(:drone_feed, :mail_from, {"DroneFeed", "dronefeed@tfeuerbach.dev"})
+    Application.get_env(:drone_feed, :mail_from, {"DroneFeed", "noreply@example.com"})
   end
 
   defp site_url do
