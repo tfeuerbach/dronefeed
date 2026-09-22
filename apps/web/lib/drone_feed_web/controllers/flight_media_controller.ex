@@ -11,12 +11,22 @@ defmodule DroneFeedWeb.FlightMediaController do
     scope = conn.assigns.current_scope
     flight = Flights.get_flight!(scope, id)
 
-    case BrowserPreview.ensure(flight) do
-      {:ok, path, content_type} ->
-        serve(conn, path, content_type)
+    cond do
+      BrowserPreview.ready?(flight) ->
+        case BrowserPreview.ensure(flight) do
+          {:ok, path, content_type} ->
+            serve(conn, path, content_type)
 
-      {:error, _} ->
-        send_resp(conn, 404, "media unavailable")
+          {:error, _} ->
+            send_resp(conn, 404, "media unavailable")
+        end
+
+      true ->
+        BrowserPreview.warm(flight)
+
+        conn
+        |> put_resp_header("retry-after", "3")
+        |> send_resp(503, "preview preparing")
     end
   rescue
     Ecto.NoResultsError ->

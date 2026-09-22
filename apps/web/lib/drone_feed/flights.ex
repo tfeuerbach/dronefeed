@@ -9,6 +9,7 @@ defmodule DroneFeed.Flights do
   import Ecto.Query
 
   alias DroneFeed.Accounts.Scope
+  alias DroneFeed.Flights.BrowserPreview
   alias DroneFeed.Flights.Flight
   alias DroneFeed.Repo
   alias DroneFeed.Streaming.PublisherSupervisor
@@ -71,19 +72,27 @@ defmodule DroneFeed.Flights do
     id = Ecto.UUID.generate()
 
     with {:ok, paths} <- persist_files(user.id, id, files) do
-      %Flight{id: id}
-      |> Flight.changeset(
-        Map.merge(attrs, %{
-          "user_id" => user.id,
-          "stream_key" => stream_key,
-          "expires_at" => expires_at,
-          "video_path" => paths.video_path,
-          "srt_path" => paths.srt_path,
-          "klv_path" => paths.klv_path,
-          "original_video_name" => paths.original_video_name
-        })
-      )
-      |> Repo.insert()
+      result =
+        %Flight{id: id}
+        |> Flight.changeset(
+          Map.merge(attrs, %{
+            "user_id" => user.id,
+            "stream_key" => stream_key,
+            "expires_at" => expires_at,
+            "video_path" => paths.video_path,
+            "srt_path" => paths.srt_path,
+            "klv_path" => paths.klv_path,
+            "original_video_name" => paths.original_video_name
+          })
+        )
+        |> Repo.insert()
+
+      case result do
+        {:ok, flight} -> BrowserPreview.warm(flight)
+        _ -> :ok
+      end
+
+      result
     end
   end
 

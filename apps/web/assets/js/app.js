@@ -25,8 +25,13 @@ const liveSocket = new LiveSocket("/live", Socket, {
   },
 })
 
-topbar.config({barColors: {0: "#0D9F8F"}, shadowColor: "rgba(15, 20, 25, .25)"})
-window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
+topbar.config({
+  barColors: {0: "#0D9F8F", ".5": "#14B8A6", "1.0": "#0D9F8F"},
+  shadowColor: "rgba(15, 20, 25, .28)",
+  barThickness: 4,
+  className: "df-topbar",
+})
+window.addEventListener("phx:page-loading-start", _info => topbar.show(200))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 liveSocket.connect()

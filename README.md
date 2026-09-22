@@ -87,6 +87,31 @@ Upload video + optional .srt / .klv
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
 6. Public feed off (or expiry) stops the publisher; pull URLs go dark. Source files remain until retention deletes them.
 
+### HTTP API (API tokens)
+
+Create a token under **Account settings** (shown once). Then:
+
+```bash
+export DF_TOKEN='df_…'   # from settings
+export DF_HOST='https://dronefeed.example.com'
+
+curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/me"
+curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/feeds"
+curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/flights"
+curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/flights/<id>"
+curl -sS -H "Authorization: Bearer $DF_TOKEN" "$DF_HOST/api/v1/live"
+# also: wget -qO- --header="X-Api-Key: $DF_TOKEN" "$DF_HOST/api/v1/feeds"
+```
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/v1/me` | Current user |
+| `GET /api/v1/feeds` | Published flights + live sessions with pull URLs |
+| `GET /api/v1/flights` | Shared library (urls only when `publishing`) |
+| `GET /api/v1/flights/:id` | One flight |
+| `GET /api/v1/live` | Active live sessions |
+| `GET /api/v1/live/:id` | One live session (ingest URLs if you own it) |
+
 **Browser UI** parses `.srt` (or extracted KLV) for Map View and live readouts — **separate** from the STANAG mux used for egress. Gladius / ops maps that read the pull stream see the muxed MISB packets (including derived motion on consumer flights).
 
 **Live ingest**

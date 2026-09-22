@@ -5,7 +5,7 @@ defmodule DroneFeed.Accounts do
 
   import Ecto.Query, warn: false
   alias DroneFeed.Repo
-  alias DroneFeed.Accounts.{User, UserToken, UserNotifier, AdminNotification}
+  alias DroneFeed.Accounts.{User, UserToken, UserNotifier, AdminNotification, ApiToken}
 
   @admin_inbox_topic "admin:inbox"
 
@@ -419,6 +419,91 @@ defmodule DroneFeed.Accounts do
 
   def delete_user_session_token(token) do
     Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
+    :ok
+  end
+
+  ## API tokens (Bearer / X-Api-Key for programmatic access)
+
+  @api_token_bytes 32
+  @api_token_prefix "df_"
+
+  @doc """
+  Creates an API token for the user. Returns `{:ok, api_token}` where
+  `api_token.plaintext` is set once — store it; only the hash is persisted.
+  """
+  def create_api_token(%User{} = user, attrs) when is_map(attrs) do
+    raw = @api_token_prefix <> Base.url_encode64(:crypto.strong_rand_bytes(@api_token_bytes), padding: false)
+    prefix = String.slice(raw, 0, 11)
+    hash = :crypto.hash(:sha256, raw)
+
+    %ApiToken{}
+    |> ApiToken.changeset(attrs)
+    |> Ecto.Changeset.put_change(:user_id, user.id)
+    |> Ecto.Changeset.put_change(:prefix, prefix)
+    |> Ecto.Changeset.put_change(:token_hash, hash)
+    |> Repo.insert()
+    |> case do
+      {:ok, token} -> {:ok, %{token | plaintext: raw}}
+      error -> error
+    end
+  end
+
+  def change_api_token(%ApiToken{} = token, attrs \\ %{}) do
+    ApiToken.changeset(token, attrs)
+  end
+
+  def list_api_tokens(%User{id: user_id}) do
+    from(t in ApiToken,
+      where: t.user_id == ^user_id,
+      order_by: [desc: t.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  def get_api_token!(%User{id: user_id}, id) do
+    Repo.get_by!(ApiToken, id: id, user_id: user_id)
+  end
+
+  def revoke_api_token(%User{id: user_id}, id) do
+    case Repo.get_by(ApiToken, id: id, user_id: user_id) do
+      nil -> {:error, :not_found}
+      token -> Repo.delete(token)
+    end
+  end
+
+  @doc """
+  Looks up an active user by plaintext API token. Updates `last_used_at` best-effort.
+  """
+  def get_user_by_api_token(plaintext) when is_binary(plaintext) do
+    hash = :crypto.hash(:sha256, plaintext)
+
+    case from(t in ApiToken,
+           join: u in assoc(t, :user),
+           where: t.token_hash == ^hash,
+           select: {u, t}
+         )
+         |> Repo.one() do
+      {%User{} = user, %ApiToken{} = token} ->
+        if User.active?(user) do
+          touch_api_token(token)
+          user
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  def get_user_by_api_token(_), do: nil
+
+  defp touch_api_token(%ApiToken{} = token) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    from(t in ApiToken, where: t.id == ^token.id)
+    |> Repo.update_all(set: [last_used_at: now, updated_at: now])
+
     :ok
   end
 

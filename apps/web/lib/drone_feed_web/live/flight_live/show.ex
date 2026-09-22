@@ -2,6 +2,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
   use DroneFeedWeb, :live_view
 
   alias DroneFeed.Flights
+  alias DroneFeed.Flights.BrowserPreview
   alias DroneFeed.Streaming
   alias DroneFeed.Streaming.FlightLog
   alias DroneFeed.Telemetry
@@ -64,16 +65,31 @@ defmodule DroneFeedWeb.FlightLive.Show do
           data-points={Jason.encode!(@telemetry.points)}
         >
           <section class="df-flight-stage">
-            <div class="df-flight-player" id={"flight-player-#{@flight.id}"} phx-update="ignore">
-              <video
-                id={"flight-video-#{@flight.id}"}
-                class="df-flight-video"
-                controls
-                playsinline
-                preload="metadata"
-                src={~p"/flights/#{@flight.id}/media"}
+            <div class="df-flight-player">
+              <div :if={!@preview_ready} class="df-media-preparing" aria-live="polite">
+                <div class="df-media-preparing-track" aria-hidden="true">
+                  <div class="df-media-preparing-fill"></div>
+                </div>
+                <p class="df-media-preparing-title">Preparing browser preview</p>
+                <p class="df-media-preparing-sub">
+                  Converting this recording for web playback — video appears when ready.
+                </p>
+              </div>
+              <div
+                :if={@preview_ready}
+                id={"flight-player-#{@flight.id}"}
+                phx-update="ignore"
               >
-              </video>
+                <video
+                  id={"flight-video-#{@flight.id}"}
+                  class="df-flight-video"
+                  controls
+                  playsinline
+                  preload="metadata"
+                  src={~p"/flights/#{@flight.id}/media"}
+                >
+                </video>
+              </div>
             </div>
           </section>
 
@@ -234,6 +250,12 @@ defmodule DroneFeedWeb.FlightLive.Show do
     end
 
     entries = FlightLog.list(flight.id)
+    preview_ready = BrowserPreview.ready?(flight)
+
+    if connected?(socket) and not preview_ready do
+      BrowserPreview.warm(flight)
+      Process.send_after(self(), :check_preview, 1500)
+    end
 
     {:ok,
      socket
@@ -243,6 +265,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
      |> assign(:can_delete?, Flights.can_delete?(scope, flight))
      |> assign(:telemetry, telemetry)
      |> assign(:readout, %{lat: stats.lat, lon: stats.lon, alt: stats.alt})
+     |> assign(:preview_ready, preview_ready)
      |> assign(:log_filter, :all)
      |> assign(:log_empty?, entries == [])
      |> stream(:log_entries, entries, reset: true)}
@@ -305,6 +328,18 @@ defmodule DroneFeedWeb.FlightLive.Show do
   end
 
   @impl true
+  def handle_info(:check_preview, socket) do
+    flight = socket.assigns.flight
+
+    if BrowserPreview.ready?(flight) do
+      {:noreply, assign(socket, :preview_ready, true)}
+    else
+      BrowserPreview.warm(flight)
+      Process.send_after(self(), :check_preview, 2000)
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:flight_log, entry}, socket) do
     if visible?(entry, socket.assigns.log_filter) do
       {:noreply,

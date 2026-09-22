@@ -108,4 +108,25 @@ defmodule DroneFeedWeb.UserLive.SettingsTest do
       assert result =~ "does not match password"
     end
   end
+
+  describe "API tokens" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "creates and lists a token", %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/users/settings")
+      assert html =~ "API tokens"
+
+      html =
+        lv
+        |> form("#api-token-form", %{"api_token" => %{"name" => "CI box"}})
+        |> render_submit()
+
+      assert html =~ "Copy this token now"
+      assert html =~ "CI box"
+      assert html =~ "df_"
+    end
+  end
 end

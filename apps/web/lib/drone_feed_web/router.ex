@@ -18,6 +18,11 @@ defmodule DroneFeedWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :api_auth do
+    plug :accepts, ["json"]
+    plug DroneFeedWeb.Plugs.ApiAuth
+  end
+
   pipeline :stream_pull do
     plug :accepts, ["*/*"]
   end
@@ -26,6 +31,17 @@ defmodule DroneFeedWeb.Router do
     pipe_through :api
 
     post "/mediamtx/auth", MediaAuthController, :auth
+  end
+
+  scope "/api/v1", DroneFeedWeb.Api.V1 do
+    pipe_through :api_auth
+
+    get "/me", MeController, :show
+    get "/feeds", FeedsController, :index
+    get "/flights", FlightsController, :index
+    get "/flights/:id", FlightsController, :show
+    get "/live", LiveController, :index
+    get "/live/:id", LiveController, :show
   end
 
   scope "/api", DroneFeedWeb do

@@ -55,7 +55,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
               id="flight-form"
               phx-submit="save"
               phx-change="validate"
-              class="space-y-4"
+              class="relative space-y-4"
             >
               <.input field={@form[:name]} type="text" label="Name" required />
               <.upload_dropzone
@@ -75,7 +75,38 @@ defmodule DroneFeedWeb.FlightLive.Index do
                   hint="Enterprise metadata sidecar — optional if already in the TS"
                 />
               </div>
-              <.button phx-disable-with="Uploading..." variant="primary">Upload flight</.button>
+              <.button
+                phx-disable-with="Saving…"
+                variant="primary"
+                disabled={not upload_ready?(@uploads)}
+              >
+                Upload flight
+              </.button>
+
+              <div
+                class={[
+                  "df-upload-overlay",
+                  uploads_busy?(@uploads) && "df-upload-overlay--on"
+                ]}
+                id="flight-upload-overlay"
+                aria-live="polite"
+              >
+                <div class="df-upload-card">
+                  <p class="df-upload-card-title">
+                    {upload_phase_title(@uploads)}
+                  </p>
+                  <p class="df-upload-card-sub">
+                    {upload_phase_sub(@uploads)}
+                  </p>
+                  <div :if={uploads_busy?(@uploads)} class="df-upload-card-list">
+                    <.upload_progress_entry
+                      :for={entry <- upload_entries(@uploads)}
+                      entry={entry}
+                    />
+                  </div>
+                  <div class="df-upload-indeterminate" aria-hidden="true"></div>
+                </div>
+              </div>
             </.form>
           </div>
 
@@ -302,11 +333,27 @@ defmodule DroneFeedWeb.FlightLive.Index do
      |> allow_upload(:video,
        accept: :any,
        max_entries: 1,
-       max_file_size: 5_000_000_000
+       max_file_size: 5_000_000_000,
+       auto_upload: true,
+       progress: &handle_progress/3
      )
-     |> allow_upload(:srt, accept: :any, max_entries: 1, max_file_size: 50_000_000)
-     |> allow_upload(:klv, accept: :any, max_entries: 1, max_file_size: 500_000_000)}
+     |> allow_upload(:srt,
+       accept: :any,
+       max_entries: 1,
+       max_file_size: 50_000_000,
+       auto_upload: true,
+       progress: &handle_progress/3
+     )
+     |> allow_upload(:klv,
+       accept: :any,
+       max_entries: 1,
+       max_file_size: 500_000_000,
+       auto_upload: true,
+       progress: &handle_progress/3
+     )}
   end
+
+  defp handle_progress(_name, _entry, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("set_create_mode", %{"mode" => mode}, socket)
@@ -514,6 +561,35 @@ defmodule DroneFeedWeb.FlightLive.Index do
     {:ok, %{path: tmp, filename: entry.client_name}}
   end
 
+  defp uploads_busy?(uploads) do
+    Enum.any?(upload_entries(uploads), fn entry -> not entry.done? end) or
+      Enum.any?(upload_entries(uploads), & &1.progress < 100)
+  end
+
+  defp upload_ready?(uploads) do
+    case uploads.video.entries do
+      [entry] -> entry.done? and entry.valid?
+      _ -> false
+    end
+  end
+
+  defp upload_phase_title(uploads) do
+    if uploads_busy?(uploads), do: "Uploading files", else: "Processing flight"
+  end
+
+  defp upload_phase_sub(uploads) do
+    if uploads_busy?(uploads) do
+      "Transferring to the server — keep this tab open."
+    else
+      "Storing files and preparing browser preview / library entry…"
+    end
+  end
+
+  defp upload_entries(uploads) do
+    [:video, :srt, :klv]
+    |> Enum.flat_map(fn key -> Map.get(uploads, key).entries end)
+  end
+
   defp upload_dropzone(assigns) do
     assigns = assign_new(assigns, :hint, fn -> nil end)
 
@@ -524,12 +600,48 @@ defmodule DroneFeedWeb.FlightLive.Index do
       </label>
       <p :if={@hint} class="text-xs text-base-content/50">{@hint}</p>
       <.live_file_input upload={@upload} class="file-input file-input-bordered w-full" />
-      <p :for={entry <- @upload.entries} class="font-mono text-xs text-base-content/60">
-        {entry.client_name} · {Float.round(entry.progress * 1.0, 0)}%
-      </p>
+      <.upload_progress_entry :for={entry <- @upload.entries} entry={entry} />
       <p :for={err <- upload_errors(@upload)} class="text-sm text-error">
         {error_to_string(err)}
       </p>
+    </div>
+    """
+  end
+
+  defp upload_progress_entry(assigns) do
+    pct = assigns.entry.progress |> max(0) |> min(100)
+
+    assigns =
+      assigns
+      |> assign(:pct, pct)
+      |> assign(:done?, pct >= 100)
+
+    ~H"""
+    <div class="df-upload-entry">
+      <div class="df-upload-entry-meta">
+        <span class="df-upload-entry-name" title={@entry.client_name}>{@entry.client_name}</span>
+        <span class="df-upload-entry-pct">
+          <%= if @done? do %>
+            Ready
+          <% else %>
+            {@pct}%
+          <% end %>
+        </span>
+      </div>
+      <div
+        class="df-upload-track"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={@pct}
+        aria-label={"Upload progress for #{@entry.client_name}"}
+      >
+        <div
+          class={["df-upload-fill", @done? && "df-upload-fill--done"]}
+          style={"width: #{@pct}%"}
+        >
+        </div>
+      </div>
     </div>
     """
   end
