@@ -43,7 +43,7 @@ KLV is carried in-band in the MPEG-TS (MISB ST 0601). SRT re-serves that TS. RTS
 
 **Consumer vs enterprise KLV on Public feed**
 
-- **DJI / `.SRT` uploads** — `mux_to_stanag.py` synthesizes ST 0601 from GPS cues (sensor lat/lon/alt every packet) and **derives** heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from a ~2s GPS lookback. The source `.SRT` typically has no speed/heading fields.
+- **DJI / `.SRT` uploads** — `mux_to_stanag.py` synthesizes ST 0601 from GPS cues (sensor lat/lon/alt every packet) and **derives** heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from a ~2s GPS lookback. Each packet is **PTS-timed** to its SRT cue and interleaved with video so replay is not a KLV burst. The source `.SRT` typically has no speed/heading fields.
 - **Enterprise TS+KLV** — remux/passthrough; existing motion tags are preserved.
 - Cached `publish_stanag.ts` rebuilds when the video/sidecar **or** the mux script changes. Toggle Public feed off/on after a mux deploy so FFmpeg picks up the new TS.
 

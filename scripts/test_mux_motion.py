@@ -18,7 +18,9 @@ from mux_to_stanag import (  # noqa: E402
     encode_uas_packet,
     haversine_m,
     infer_motion,
+    mux_video_with_timed_klv,
     parse_dji_srt,
+    timed_klv_from_srt,
     write_klv_from_srt,
 )
 
@@ -122,6 +124,60 @@ class EncodeAndSampleSrtTests(unittest.TestCase):
             raw = out.read_bytes()
             self.assertGreater(len(raw), 100)
             self.assertIn(b"\x38", raw)
+
+
+class TimedKlvMuxTests(unittest.TestCase):
+    def test_srt_timed_packets_span_clip(self) -> None:
+        srt = ROOT.parent / "sample-data/consumer-dji/13_01_23-DJI_0030/DJI_0030.SRT"
+        if not srt.exists():
+            self.skipTest("sample SRT not present")
+
+        timed = timed_klv_from_srt(srt)
+        self.assertGreater(len(timed), 100)
+        pts = [p for p, _ in timed]
+        self.assertEqual(pts[0], 0)
+        span_s = (pts[-1] - pts[0]) / 90_000
+        self.assertGreater(span_s, 10.0)
+        self.assertEqual(len(set(pts)), len(pts))
+
+    def test_mux_preserves_unique_klv_pts(self) -> None:
+        import json
+        import subprocess
+
+        srt = ROOT.parent / "sample-data/consumer-dji/13_01_23-DJI_0030/DJI_0030.SRT"
+        vid = ROOT.parent / "sample-data/consumer-dji/13_01_23-DJI_0030/13_01_23-DJI_0030.MP4"
+        if not srt.exists() or not vid.exists():
+            self.skipTest("sample assets not present")
+
+        timed = timed_klv_from_srt(srt)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.ts"
+            mux_video_with_timed_klv(vid, timed, out)
+            raw = subprocess.check_output(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "d:0",
+                    "-show_packets",
+                    "-show_entries",
+                    "packet=pts_time",
+                    "-of",
+                    "json",
+                    str(out),
+                ],
+                text=True,
+            )
+            packets = json.loads(raw).get("packets") or []
+            pts = [
+                float(p["pts_time"])
+                for p in packets
+                if p.get("pts_time") not in (None, "N/A")
+            ]
+            self.assertEqual(len(pts), len(timed))
+            self.assertGreater(pts[-1] - pts[0], 10.0)
+            self.assertEqual(len({round(t, 3) for t in pts}), len(pts))
 
 
 if __name__ == "__main__":

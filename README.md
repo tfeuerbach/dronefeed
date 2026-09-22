@@ -80,8 +80,8 @@ Upload video + optional .srt / .klv
 
 1. Flight assets land in storage (video + optional `.srt` / `.klv`).
 2. `scripts/mux_to_stanag.py` builds a cached `publish_stanag.ts`:
-   - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video. Cues usually only have lat/lon/alt; the muxer emits those every packet and **derives** platform heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from GPS deltas over a ~2s lookback window (heading updates only after ~1 m of travel so hover jitter does not spin the bearing).
-   - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present (full ST 0601 tags preserved — no rewrite).
+   - **Consumer:** DJI `.srt` → MISB ST 0601 KLV → mux with video. Cues usually only have lat/lon/alt; the muxer emits those every packet and **derives** platform heading (tag 5), ground speed (tag 56), and vertical speed (tag 51) from GPS deltas over a ~2s lookback window (heading updates only after ~1 m of travel so hover jitter does not spin the bearing). Each KLV packet gets a **PTS aligned to its SRT cue time** and is interleaved with video so Public-feed replay paces telemetry in real time (not a front-loaded burst).
+   - **Enterprise:** remux existing MPEG-TS when a data/KLV stream is already present (full ST 0601 tags + transport timing preserved — no rewrite).
 3. FFmpeg loops that TS into MediaMTX over **SRT** (`publish:vod/<id>`): video is re-encoded for puller health; the **KLV data track is copied**. MediaMTX re-serves **SRT / RTSP / RTMP** (one source per path). Prefer **SRT** (`latency=2000` ms default) for H.264+KLV MPEG-TS; RTSP is RTP/SMPTE336M; RTMP is A/V-only.
 4. Research tools open the **capability URL** from the UI (token embedded — RTMP `?user=&pass=`, RTSP userinfo, or SRT `streamid`). No separate username/password.
 5. Original `.srt` / `.klv` sidecars stay available over HTTP metadata URLs while publishing.
@@ -159,7 +159,7 @@ Caddy serves HTTPS on 443 with automatic certificate renewal. Point your domain'
 - `images/brand-mark.svg` — brand mark (README); also at `apps/web/priv/static/images/`
 - `deploy/` — MediaMTX config, Docker Compose, Dockerfile, `.env`
 - `deploy/maintenance/` — after-hours static page (S3/CloudFront) + Cloudflare Worker
-- `scripts/mux_to_stanag.py` — SRT→KLV (with derived heading/speed) / STANAG MPEG-TS normalize
+- `scripts/mux_to_stanag.py` — SRT→KLV (derived heading/speed, PTS-timed mux) / STANAG MPEG-TS normalize
 - `scripts/test_mux_motion.py` — unit tests for GPS→motion inference
 - `scripts/extract_klv_track.py` — KLV → JSON for UI map/readouts
 - `scripts/seed_dev.sh` — re-seed local admin
