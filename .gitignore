@@ -2,6 +2,7 @@
 /sample-data/*
 !/sample-data/README.md
 /tmp/
+/apps/tmp/
 *.log
 .DS_Store
 .env
@@ -13,5 +14,8 @@ deploy/maintenance/generated/
 # Rendered from templates via configure.sh (may contain your hostname / CDN URL)
 deploy/maintenance/index.html
 deploy/maintenance/cloudflare-worker.js
+__pycache__/
+*.py[cod]
+*$py.class
 
 
