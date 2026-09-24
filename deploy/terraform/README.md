@@ -56,17 +56,20 @@ Open the URL in a browser. First boot builds images; check
 
 ## After-hours offline page (S3 + CloudFront)
 
-Enabled by default (`enable_maintenance_static = true`):
+Enabled by default via `./setup.sh`, which asks:
 
-- Private S3 bucket + CloudFront with Origin Access Control
-- Seeds a default `index.html` and `brand-mark.svg`
-- Outputs: `maintenance_url`, `maintenance_bucket`, `maintenance_distribution_id`
+1. Create a **new** bucket or use an **existing** one?
+2. Is that bucket in the **same AWS account** as EC2?
+3. If **not** — bucket region + access key / secret (and optional session token),
+   written to gitignored `secrets.auto.tfvars`.
 
-`./setup.sh` writes `deploy/maintenance/generated/aws.env` after apply so
-`./sync.sh` works. To customize copy, run `deploy/maintenance/configure.sh` then
-`./sync.sh`.
+CloudFront always runs in the EC2 account. S3 create/policy/objects use the
+`aws.maintenance` provider (same creds or cross-account keys).
 
-Worker / Lambda source copies live in [`workers/`](./workers/) (not applied by Terraform).
+Outputs: `maintenance_url`, `maintenance_bucket`, `maintenance_distribution_id`.
+
+`./setup.sh` also writes `deploy/maintenance/generated/aws.env` after apply.
+Worker / Lambda source copies: [`workers/`](./workers/).
 
 ---
 

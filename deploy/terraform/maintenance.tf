@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
-# After-hours static page — private S3 + CloudFront (OAC)
-# Matches deploy/maintenance/README.md; upload/customize via configure.sh + sync.sh.
+# After-hours static page — S3 (this or another account) + CloudFront (OAC)
+# S3 ops use the aws.maintenance provider (same creds or cross-account keys).
+# CloudFront always lives in the primary EC2 account.
 # -----------------------------------------------------------------------------
 
 data "aws_caller_identity" "current" {}
@@ -11,9 +12,26 @@ data "aws_cloudfront_cache_policy" "caching_optimized" {
 }
 
 locals {
+  maintenance_create = var.enable_maintenance_static && var.maintenance_create_bucket
+
   maintenance_bucket_name = coalesce(
-    var.maintenance_bucket_name,
-    "${var.name_prefix}-after-hours-${data.aws_caller_identity.current.account_id}"
+    var.maintenance_bucket_name != "" ? var.maintenance_bucket_name : null,
+    var.enable_maintenance_static ? "${var.name_prefix}-after-hours-${data.aws_caller_identity.current.account_id}" : null
+  )
+
+  maintenance_bucket_id = (
+    !var.enable_maintenance_static ? "" :
+    local.maintenance_create ? aws_s3_bucket.maintenance[0].id : data.aws_s3_bucket.maintenance[0].id
+  )
+
+  maintenance_bucket_arn = (
+    !var.enable_maintenance_static ? "" :
+    local.maintenance_create ? aws_s3_bucket.maintenance[0].arn : data.aws_s3_bucket.maintenance[0].arn
+  )
+
+  maintenance_bucket_regional_domain = (
+    !var.enable_maintenance_static ? "" :
+    local.maintenance_create ? aws_s3_bucket.maintenance[0].bucket_regional_domain_name : data.aws_s3_bucket.maintenance[0].bucket_regional_domain_name
   )
 
   maintenance_asset_base = (
@@ -57,9 +75,46 @@ locals {
   )
 }
 
+check "maintenance_bucket_name" {
+  assert {
+    condition     = !var.enable_maintenance_static || local.maintenance_bucket_name != null && local.maintenance_bucket_name != ""
+    error_message = "maintenance_bucket_name is required when enable_maintenance_static is true (or leave empty only when creating a new bucket)."
+  }
+}
+
+check "maintenance_cross_account_keys" {
+  assert {
+    condition = (
+      !var.enable_maintenance_static ||
+      var.maintenance_bucket_same_account ||
+      (var.maintenance_bucket_access_key != "" && var.maintenance_bucket_secret_key != "")
+    )
+    error_message = "Cross-account maintenance bucket requires maintenance_bucket_access_key and maintenance_bucket_secret_key."
+  }
+}
+
+check "maintenance_existing_name" {
+  assert {
+    condition = (
+      !var.enable_maintenance_static ||
+      var.maintenance_create_bucket ||
+      var.maintenance_bucket_name != ""
+    )
+    error_message = "Set maintenance_bucket_name when using an existing offline-page bucket (maintenance_create_bucket = false)."
+  }
+}
+
+# Existing bucket (same or cross-account via aws.maintenance provider).
+data "aws_s3_bucket" "maintenance" {
+  count    = var.enable_maintenance_static && !var.maintenance_create_bucket ? 1 : 0
+  provider = aws.maintenance
+  bucket   = var.maintenance_bucket_name
+}
+
 resource "aws_s3_bucket" "maintenance" {
-  count  = var.enable_maintenance_static ? 1 : 0
-  bucket = local.maintenance_bucket_name
+  count    = local.maintenance_create ? 1 : 0
+  provider = aws.maintenance
+  bucket   = local.maintenance_bucket_name
 
   tags = {
     Name = "${var.name_prefix}-after-hours"
@@ -67,8 +122,9 @@ resource "aws_s3_bucket" "maintenance" {
 }
 
 resource "aws_s3_bucket_public_access_block" "maintenance" {
-  count  = var.enable_maintenance_static ? 1 : 0
-  bucket = aws_s3_bucket.maintenance[0].id
+  count    = local.maintenance_create ? 1 : 0
+  provider = aws.maintenance
+  bucket   = aws_s3_bucket.maintenance[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -77,8 +133,9 @@ resource "aws_s3_bucket_public_access_block" "maintenance" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "maintenance" {
-  count  = var.enable_maintenance_static ? 1 : 0
-  bucket = aws_s3_bucket.maintenance[0].id
+  count    = local.maintenance_create ? 1 : 0
+  provider = aws.maintenance
+  bucket   = aws_s3_bucket.maintenance[0].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -88,8 +145,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "maintenance" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "maintenance" {
-  count  = var.enable_maintenance_static ? 1 : 0
-  bucket = aws_s3_bucket.maintenance[0].id
+  count    = local.maintenance_create ? 1 : 0
+  provider = aws.maintenance
+  bucket   = aws_s3_bucket.maintenance[0].id
 
   rule {
     object_ownership = "BucketOwnerEnforced"
@@ -117,7 +175,7 @@ resource "aws_cloudfront_distribution" "maintenance" {
   wait_for_deployment = true
 
   origin {
-    domain_name              = aws_s3_bucket.maintenance[0].bucket_regional_domain_name
+    domain_name              = local.maintenance_bucket_regional_domain
     origin_id                = "s3-maintenance"
     origin_access_control_id = aws_cloudfront_origin_access_control.maintenance[0].id
   }
@@ -161,7 +219,7 @@ data "aws_iam_policy_document" "maintenance_s3" {
     }
 
     actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.maintenance[0].arn}/*"]
+    resources = ["${local.maintenance_bucket_arn}/*"]
 
     condition {
       test     = "StringEquals"
@@ -171,10 +229,12 @@ data "aws_iam_policy_document" "maintenance_s3" {
   }
 }
 
+# Replaces the bucket policy on the target bucket (required for CloudFront OAC).
 resource "aws_s3_bucket_policy" "maintenance" {
-  count  = var.enable_maintenance_static ? 1 : 0
-  bucket = aws_s3_bucket.maintenance[0].id
-  policy = data.aws_iam_policy_document.maintenance_s3[0].json
+  count    = var.enable_maintenance_static ? 1 : 0
+  provider = aws.maintenance
+  bucket   = local.maintenance_bucket_id
+  policy   = data.aws_iam_policy_document.maintenance_s3[0].json
 
   depends_on = [
     aws_s3_bucket_public_access_block.maintenance,
@@ -182,11 +242,11 @@ resource "aws_s3_bucket_policy" "maintenance" {
   ]
 }
 
-# Seed a default page so MAINTENANCE_URL works before configure.sh + sync.sh.
 resource "aws_s3_object" "maintenance_index" {
-  count = var.enable_maintenance_static ? 1 : 0
+  count    = var.enable_maintenance_static ? 1 : 0
+  provider = aws.maintenance
 
-  bucket        = aws_s3_bucket.maintenance[0].id
+  bucket        = local.maintenance_bucket_id
   key           = "index.html"
   content       = local.maintenance_index_html
   content_type  = "text/html; charset=utf-8"
@@ -197,9 +257,10 @@ resource "aws_s3_object" "maintenance_index" {
 }
 
 resource "aws_s3_object" "maintenance_brand" {
-  count = var.enable_maintenance_static ? 1 : 0
+  count    = var.enable_maintenance_static ? 1 : 0
+  provider = aws.maintenance
 
-  bucket        = aws_s3_bucket.maintenance[0].id
+  bucket        = local.maintenance_bucket_id
   key           = "brand-mark.svg"
   source        = "${path.module}/../maintenance/brand-mark.svg"
   content_type  = "image/svg+xml"

@@ -26,3 +26,13 @@ provider "aws" {
     )
   }
 }
+
+# S3 for the offline page — same account (default creds) or cross-account keys.
+provider "aws" {
+  alias  = "maintenance"
+  region = var.maintenance_bucket_region != "" ? var.maintenance_bucket_region : var.aws_region
+
+  access_key = var.maintenance_bucket_same_account ? null : var.maintenance_bucket_access_key
+  secret_key = var.maintenance_bucket_same_account ? null : var.maintenance_bucket_secret_key
+  token      = var.maintenance_bucket_same_account || var.maintenance_bucket_session_token == "" ? null : var.maintenance_bucket_session_token
+}

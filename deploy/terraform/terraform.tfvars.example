@@ -27,9 +27,16 @@ enable_ssm            = true
 enable_ses_send       = true
 associate_elastic_ip  = true
 
-# After-hours offline page (private S3 + CloudFront). Customize later via deploy/maintenance.
-# enable_maintenance_static = true
-# maintenance_bucket_name   = ""  # empty → name_prefix-after-hours-<account_id>
+# After-hours offline page (S3 + CloudFront). Customize later via deploy/maintenance.
+# enable_maintenance_static       = true
+# maintenance_create_bucket       = true   # false = use existing maintenance_bucket_name
+# maintenance_bucket_name         = ""     # required if create=false; optional name if create=true
+# maintenance_bucket_same_account = true   # false = set keys in secrets.auto.tfvars
+# maintenance_bucket_region       = ""     # empty = aws_region
+# Cross-account only (gitignored secrets.auto.tfvars):
+#   maintenance_bucket_access_key    = "AKIA..."
+#   maintenance_bucket_secret_key    = "..."
+#   maintenance_bucket_session_token = ""  # optional
 
 # Weekday auto start/stop (EventBridge Scheduler). Off by default.
 # enable_business_hours_schedule = true

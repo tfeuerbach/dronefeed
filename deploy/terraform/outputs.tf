@@ -68,7 +68,12 @@ output "business_hours_schedule" {
 
 output "maintenance_bucket" {
   description = "After-hours S3 bucket name (null if disabled)."
-  value       = var.enable_maintenance_static ? aws_s3_bucket.maintenance[0].id : null
+  value       = var.enable_maintenance_static ? local.maintenance_bucket_id : null
+}
+
+output "maintenance_bucket_same_account" {
+  description = "Whether the offline-page bucket uses the primary account credentials."
+  value       = var.enable_maintenance_static ? var.maintenance_bucket_same_account : null
 }
 
 output "maintenance_distribution_id" {

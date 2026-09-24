@@ -104,15 +104,54 @@ variable "associate_elastic_ip" {
 }
 
 variable "enable_maintenance_static" {
-  description = "Provision private S3 + CloudFront (OAC) for the after-hours offline page (deploy/maintenance)."
+  description = "Wire CloudFront + offline page objects for after-hours (deploy/maintenance)."
+  type        = bool
+  default     = true
+}
+
+variable "maintenance_create_bucket" {
+  description = "true = create a new S3 bucket; false = use an existing bucket named by maintenance_bucket_name."
   type        = bool
   default     = true
 }
 
 variable "maintenance_bucket_name" {
-  description = "Optional override for the after-hours S3 bucket name (must be globally unique). Empty = name_prefix-after-hours-<account_id>."
+  description = "S3 bucket for the offline page. Required when maintenance_create_bucket is false; optional override when creating."
   type        = string
   default     = ""
+}
+
+variable "maintenance_bucket_same_account" {
+  description = "true = bucket is in the same AWS account as EC2 (default creds). false = use maintenance_bucket_* keys."
+  type        = bool
+  default     = true
+}
+
+variable "maintenance_bucket_region" {
+  description = "AWS region of the offline-page S3 bucket. Empty = aws_region."
+  type        = string
+  default     = ""
+}
+
+variable "maintenance_bucket_access_key" {
+  description = "Access key for the offline-page bucket account (cross-account only). Prefer secrets.auto.tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "maintenance_bucket_secret_key" {
+  description = "Secret key for the offline-page bucket account (cross-account only). Prefer secrets.auto.tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "maintenance_bucket_session_token" {
+  description = "Optional session token for cross-account temporary credentials."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "enable_business_hours_schedule" {
