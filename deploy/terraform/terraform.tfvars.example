@@ -5,6 +5,13 @@ name_prefix  = "dronefeed"
 instance_type = "c7i.2xlarge" # c7i.4xlarge+ for >4 public feeds
 root_volume_gb = 80
 
+tags = {
+  Project     = "dronefeed"
+  Environment = "prod"
+  # Owner       = "platform@example.com"
+  # CostCenter  = "research"
+}
+
 # Prefer locking SSH to your IP; media can stay open for research pull tools.
 # ssh_ingress_cidrs  = ["203.0.113.10/32"]
 # media_ingress_cidrs = ["0.0.0.0/0"]

@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# Interactive DroneFeed AWS spin-up helper.
+# Walks through terraform.tfvars (including custom project tags), then optional init/plan/apply.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+TFVARS="$ROOT/terraform.tfvars"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing '$1' — install it and re-run"
+}
+
+prompt() {
+  local q="$1" def="${2-}" ans
+  if [[ -n "$def" ]]; then
+    read -r -p "$q [$def]: " ans || true
+    echo "${ans:-$def}"
+  else
+    read -r -p "$q: " ans || true
+    echo "$ans"
+  fi
+}
+
+prompt_yn() {
+  local q="$1" def="${2:-y}" ans
+  local other=n
+  [[ "$def" == n ]] && other=y
+  read -r -p "$q [$def/$other]: " ans || true
+  ans="$(echo "${ans:-$def}" | tr '[:upper:]' '[:lower:]')"
+  [[ "$ans" == y || "$ans" == yes ]]
+}
+
+hcl_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+hcl_list() {
+  local out="[" first=1 item
+  for item in "$@"; do
+    [[ -z "$item" ]] && continue
+    if [[ $first -eq 1 ]]; then first=0; else out+=", "; fi
+    out+=$(hcl_str "$item")
+  done
+  out+="]"
+  printf '%s' "$out"
+}
+
+slugify() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
+}
+
+echo
+echo "DroneFeed — Terraform spin-up wizard"
+echo "===================================="
+echo "Writes $TFVARS (gitignored) and can run terraform for you."
+echo "Resources always get ManagedBy=terraform; you choose Project and other tags."
+echo
+
+need_cmd terraform
+
+if command -v aws >/dev/null 2>&1; then
+  if aws sts get-caller-identity >/dev/null 2>&1; then
+    echo "AWS identity: $(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
+  else
+    echo "warning: aws sts get-caller-identity failed — check credentials before apply."
+  fi
+else
+  echo "note: aws CLI not found — OK if AWS_* / shared credentials are configured for Terraform."
+fi
+echo
+
+echo "── Project identity (tags on all resources) ──"
+PROJECT="$(prompt "Project tag" "dronefeed")"
+ENVIRONMENT="$(prompt "Environment tag" "prod")"
+OWNER="$(prompt "Owner tag (team or email, blank to skip)" "")"
+COST_CENTER="$(prompt "CostCenter tag (blank to skip)" "")"
+
+declare -a EXTRA_KEYS=()
+declare -a EXTRA_VALS=()
+echo
+echo "Add more custom tags (key, then value). Blank key when done."
+while true; do
+  k="$(prompt "  Extra tag key (blank to finish)" "")"
+  [[ -z "$k" ]] && break
+  if [[ "$k" == "ManagedBy" ]]; then
+    echo "  skipping ManagedBy (reserved)"
+    continue
+  fi
+  v="$(prompt "  Value for $k" "")"
+  EXTRA_KEYS+=("$k")
+  EXTRA_VALS+=("$v")
+done
+
+NAME_PREFIX="$(slugify "$(prompt "Resource name_prefix" "$PROJECT")")"
+[[ -n "$NAME_PREFIX" ]] || NAME_PREFIX="dronefeed"
+
+echo
+echo "── AWS / instance ──"
+AWS_REGION="$(prompt "AWS region" "us-east-1")"
+INSTANCE_TYPE="$(prompt "Instance type (c7i.4xlarge+ if >4 public feeds)" "c7i.2xlarge")"
+ROOT_GB="$(prompt "Root volume GiB" "80")"
+AZ="$(prompt "Availability zone (blank = first in region)" "")"
+
+echo
+echo "── Access ──"
+echo "  1) Paste / detect SSH public key (Terraform creates key pair)"
+echo "  2) Existing EC2 key pair name"
+echo "  3) SSM only (no SSH key)"
+ACCESS="$(prompt "Access mode" "1")"
+PUBLIC_KEY=""
+KEY_NAME=""
+ENABLE_SSM="true"
+
+case "$ACCESS" in
+  1)
+    DEFAULT_PUB=""
+    for cand in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
+      if [[ -f "$cand" ]]; then DEFAULT_PUB="$cand"; break; fi
+    done
+    if [[ -n "$DEFAULT_PUB" ]] && prompt_yn "Use public key from $DEFAULT_PUB?" y; then
+      PUBLIC_KEY="$(tr -d '\n' <"$DEFAULT_PUB")"
+    fi
+    if [[ -z "$PUBLIC_KEY" ]]; then
+      PUBLIC_KEY="$(prompt "Paste SSH public key line" "")"
+    fi
+    [[ -n "$PUBLIC_KEY" ]] || die "public key required for mode 1"
+    ;;
+  2)
+    KEY_NAME="$(prompt "Existing EC2 key pair name" "")"
+    [[ -n "$KEY_NAME" ]] || die "key_name required for mode 2"
+    ;;
+  3)
+    echo "SSM-only selected."
+    ;;
+  *)
+    die "invalid access mode (use 1, 2, or 3)"
+    ;;
+esac
+
+if [[ "$ACCESS" != "3" ]]; then
+  if prompt_yn "Also enable SSM Session Manager?" y; then
+    ENABLE_SSM="true"
+  else
+    ENABLE_SSM="false"
+  fi
+fi
+
+SSH_CIDR="$(prompt "SSH allow CIDR (port 22)" "0.0.0.0/0")"
+MEDIA_CIDR="$(prompt "Media/UI allow CIDR (80/443/RTMP/…)" "0.0.0.0/0")"
+
+echo
+echo "── Repo bootstrap on the instance ──"
+GIT_REPO="$(prompt "Git clone URL" "https://github.com/tfeuerbach/dronefeed.git")"
+GIT_REF="$(prompt "Git branch or tag" "master")"
+DEPLOY_USER="$(prompt "Linux deploy user" "dronefeed")"
+
+ENABLE_SES="true"
+prompt_yn "Attach SES send policy to the instance role?" y || ENABLE_SES="false"
+ASSOCIATE_EIP="true"
+prompt_yn "Allocate Elastic IP (recommended)?" y || ASSOCIATE_EIP="false"
+
+if [[ -f "$TFVARS" ]]; then
+  BACKUP="$TFVARS.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$TFVARS" "$BACKUP"
+  echo
+  echo "Backed up existing tfvars → $BACKUP"
+fi
+
+{
+  echo "# Generated by setup.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "# Do not commit this file."
+  echo
+  echo "aws_region     = $(hcl_str "$AWS_REGION")"
+  echo "name_prefix    = $(hcl_str "$NAME_PREFIX")"
+  echo "instance_type  = $(hcl_str "$INSTANCE_TYPE")"
+  echo "root_volume_gb = $ROOT_GB"
+  if [[ -n "$AZ" ]]; then
+    echo "availability_zone = $(hcl_str "$AZ")"
+  fi
+  echo
+  echo "ssh_ingress_cidrs   = $(hcl_list "$SSH_CIDR")"
+  echo "media_ingress_cidrs = $(hcl_list "$MEDIA_CIDR")"
+  echo
+  if [[ -n "$PUBLIC_KEY" ]]; then
+    echo "public_key = $(hcl_str "$PUBLIC_KEY")"
+  fi
+  if [[ -n "$KEY_NAME" ]]; then
+    echo "key_name = $(hcl_str "$KEY_NAME")"
+  fi
+  echo
+  echo "git_repo_url = $(hcl_str "$GIT_REPO")"
+  echo "git_ref      = $(hcl_str "$GIT_REF")"
+  echo "deploy_user  = $(hcl_str "$DEPLOY_USER")"
+  echo
+  echo "enable_ssm           = $ENABLE_SSM"
+  echo "enable_ses_send      = $ENABLE_SES"
+  echo "associate_elastic_ip = $ASSOCIATE_EIP"
+  echo
+  echo "tags = {"
+  echo "  Project     = $(hcl_str "$PROJECT")"
+  echo "  Environment = $(hcl_str "$ENVIRONMENT")"
+  if [[ -n "$OWNER" ]]; then
+    echo "  Owner       = $(hcl_str "$OWNER")"
+  fi
+  if [[ -n "$COST_CENTER" ]]; then
+    echo "  CostCenter  = $(hcl_str "$COST_CENTER")"
+  fi
+  idx=0
+  while [[ $idx -lt ${#EXTRA_KEYS[@]} ]]; do
+    k="${EXTRA_KEYS[$idx]}"
+    v="${EXTRA_VALS[$idx]}"
+    idx=$((idx + 1))
+    case "$k" in
+      Project|Environment|Owner|CostCenter|ManagedBy) continue ;;
+    esac
+    # HCL map keys: quote if not a simple identifier
+    if [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      printf '  %s = %s\n' "$k" "$(hcl_str "$v")"
+    else
+      printf '  %s = %s\n' "$(hcl_str "$k")" "$(hcl_str "$v")"
+    fi
+  done
+  echo "}"
+} >"$TFVARS"
+
+echo
+echo "Wrote $TFVARS"
+echo
+echo "── Summary ──"
+echo "  Project=$PROJECT  Environment=$ENVIRONMENT  name_prefix=$NAME_PREFIX"
+echo "  region=$AWS_REGION  instance=$INSTANCE_TYPE"
+echo "  tags include ManagedBy=terraform (provider default) + your tags above"
+echo
+
+if ! prompt_yn "Run terraform init?" y; then
+  echo "Stopped before terraform. Review $TFVARS then run:"
+  echo "  cd $ROOT && terraform init && terraform plan && terraform apply"
+  exit 0
+fi
+
+terraform init
+
+if prompt_yn "Run terraform plan?" y; then
+  terraform plan -out=tfplan
+fi
+
+if prompt_yn "Run terraform apply now?" n; then
+  if [[ -f tfplan ]]; then
+    terraform apply tfplan
+  else
+    terraform apply
+  fi
+  echo
+  echo "── Outputs ──"
+  terraform output
+  echo
+  echo "Next: SSH/SSM in, edit /opt/drone-feed/deploy/.env (MEDIA_IP=public_ip), then:"
+  echo "  docker compose --env-file .env up -d --build"
+else
+  echo
+  echo "Skipped apply. When ready:"
+  echo "  cd $ROOT && terraform apply"
+  if [[ -f tfplan ]]; then
+    echo "  # or: terraform apply tfplan"
+  fi
+fi

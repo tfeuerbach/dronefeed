@@ -24,10 +24,23 @@ you finish `.env` on the host after apply.
 
 ## Quick start
 
+**Interactive (recommended):**
+
+```bash
+cd deploy/terraform
+./setup.sh
+```
+
+The wizard asks for project tags (`Project`, `Environment`, `Owner`, …), region,
+instance size, SSH/SSM access, then writes gitignored `terraform.tfvars` and can
+run `terraform init` / `plan` / `apply` for you.
+
+**Manual:**
+
 ```bash
 cd deploy/terraform
 cp terraform.tfvars.example terraform.tfvars
-# edit: public_key or key_name, region, ssh_ingress_cidrs, git_repo_url
+# edit: public_key or key_name, region, ssh_ingress_cidrs, git_repo_url, tags = { … }
 
 terraform init
 terraform plan
