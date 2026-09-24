@@ -1,0 +1,15 @@
+# Terraform local state / plans (do not commit secrets)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
+# Keep .terraform.lock.hcl in git for reproducible provider versions.

@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euxo pipefail
+
+# DroneFeed host bootstrap — Amazon Linux 2023
+# Mirrors production: Docker Compose stack under /opt/drone-feed, large UDP buffers.
+
+DEPLOY_USER="${deploy_user}"
+GIT_REPO_URL="${git_repo_url}"
+GIT_REF="${git_ref}"
+INSTALL_ROOT="/opt/drone-feed"
+
+dnf -y update
+dnf -y install docker git
+
+systemctl enable --now docker
+
+# Compose v2 plugin (AL2023 may already ship it; otherwise pin a known release).
+if ! docker compose version >/dev/null 2>&1; then
+  mkdir -p /usr/local/lib/docker/cli-plugins
+  curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+fi
+
+# High-bitrate SRT / MPEG-TS UDP (same values as deploy/README.md)
+cat >/etc/sysctl.d/99-dronefeed-udp.conf <<'SYSCTL'
+net.core.rmem_max=268435456
+net.core.wmem_max=268435456
+net.core.rmem_default=16777216
+net.core.wmem_default=16777216
+SYSCTL
+sysctl --system || sysctl -p /etc/sysctl.d/99-dronefeed-udp.conf
+
+id -u "$DEPLOY_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$DEPLOY_USER"
+usermod -aG docker "$DEPLOY_USER"
+usermod -aG wheel "$DEPLOY_USER" || true
+
+# Clone into a temp dir then move — avoids "destination path already exists" failures.
+TMP_CLONE="$(mktemp -d /tmp/dronefeed-clone.XXXXXX)"
+if [[ ! -d "$INSTALL_ROOT/.git" ]]; then
+  rm -rf "$INSTALL_ROOT"
+  git clone --branch "$GIT_REF" --depth 1 "$GIT_REPO_URL" "$TMP_CLONE/repo"
+  mv "$TMP_CLONE/repo" "$INSTALL_ROOT"
+else
+  git -C "$INSTALL_ROOT" fetch --depth 1 origin "$GIT_REF"
+  git -C "$INSTALL_ROOT" checkout "$GIT_REF"
+  git -C "$INSTALL_ROOT" reset --hard "FETCH_HEAD"
+fi
+rm -rf "$TMP_CLONE"
+chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_ROOT"
+
+sudo -u "$DEPLOY_USER" bash <<EOF
+set -euxo pipefail
+cd "$INSTALL_ROOT/deploy"
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  {
+    echo ""
+    echo "# --- cloud-init scaffold (set secrets + MEDIA_IP from terraform output public_ip) ---"
+  } >> .env
+fi
+EOF
+
+cat >/etc/motd <<MOTD
+DroneFeed host (${name_prefix})
+Repo: $INSTALL_ROOT
+Next:
+  1. Point DNS A record for PHX_HOST at this Elastic IP
+  2. Edit $INSTALL_ROOT/deploy/.env (SECRET_KEY_BASE, passwords, MEDIA_IP, ACME_EMAIL, …)
+  3. cd $INSTALL_ROOT/deploy && docker compose --env-file .env up -d --build
+See deploy/README.md and deploy/terraform/README.md
+MOTD

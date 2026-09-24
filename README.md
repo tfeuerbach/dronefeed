@@ -167,6 +167,7 @@ docker run --rm --network host \
 ## Production
 
 See [deploy/README.md](deploy/README.md) for ports, **minimum EC2 sizing**, host UDP buffers, DNS, and Let's Encrypt.
+To provision a matching AWS host from scratch, use [deploy/terraform](deploy/terraform) (Terraform HCL).
 
 ```bash
 cd deploy

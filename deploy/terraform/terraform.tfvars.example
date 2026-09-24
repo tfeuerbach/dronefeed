@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in. Do not commit terraform.tfvars.
+
+aws_region   = "us-east-1"
+name_prefix  = "dronefeed"
+instance_type = "c7i.2xlarge" # c7i.4xlarge+ for >4 public feeds
+root_volume_gb = 80
+
+# Prefer locking SSH to your IP; media can stay open for research pull tools.
+# ssh_ingress_cidrs  = ["203.0.113.10/32"]
+# media_ingress_cidrs = ["0.0.0.0/0"]
+
+# One of:
+#   key_name  = "my-existing-keypair"
+#   public_key = "ssh-ed25519 AAAA... you@laptop"
+
+git_repo_url = "https://github.com/tfeuerbach/dronefeed.git"
+git_ref      = "master"
+
+enable_ssm            = true
+enable_ses_send       = true
+associate_elastic_ip  = true

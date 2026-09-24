@@ -103,6 +103,13 @@ cp .env.example .env
 docker compose --env-file .env up -d --build
 ```
 
+### AWS bootstrap (Terraform)
+
+To provision a matching EC2 host (VPC, SG, Elastic IP, AL2023, Docker bootstrap)
+from scratch, see **[terraform/README.md](./terraform/README.md)**. Terraform uses
+HCL (`.tf`); after `terraform apply`, finish `deploy/.env` on the instance and run
+compose as above.
+
 - Migrations + optional admin bootstrap run via `deploy/entrypoint.sh`
 - Certs live in the `caddy_data` volume and renew automatically
 - After first successful login, clear `ADMIN_PASSWORD` from `.env` and recreate the web container if desired
