@@ -12,7 +12,8 @@ Media ports (SRT / RTSP / RTMP) cannot be faked — only the website gets this p
 cd deploy/maintenance
 cp config.example.env config.env   # optional; configure.sh can create it
 ./configure.sh                     # answer prompts (agnostic defaults)
-# …provision S3 + CloudFront, write generated/aws.env…
+# …S3 + CloudFront come from deploy/terraform (or create manually)…
+# setup.sh writes generated/aws.env; otherwise fill it from terraform outputs
 ./sync.sh                          # upload rendered index.html + brand-mark.svg
 ```
 
@@ -37,11 +38,13 @@ Re-render anytime without prompts:
 
 ### Cloudflare (once)
 
-1. DNS **A** for your site → Elastic IP, **Proxied** (orange cloud).  
-   Grey-cloud DNS bypasses Workers and will hang when the origin is off.
-2. Create a Worker, paste generated `cloudflare-worker.js`.
-3. Variable: `MAINTENANCE_URL` = your static `index.html` URL.
-4. Route: `your.site/*`.
+Step-by-step: **[../terraform/README.md](../terraform/README.md#path-1--cloudflare)**.  
+Worker JS: [`../terraform/workers/cloudflare-worker.js`](../terraform/workers/cloudflare-worker.js).
+
+### Route 53 (once)
+
+Step-by-step: **[../terraform/README.md](../terraform/README.md#path-2--route-53-aws)**.  
+Lambda@Edge JS: [`../terraform/workers/lambda-edge-viewer-request.js`](../terraform/workers/lambda-edge-viewer-request.js).
 
 ### Files
 
@@ -55,10 +58,17 @@ Re-render anytime without prompts:
 | `generated/` | AWS ids, ACM records, checklist (**gitignored**) |
 | `brand-mark.svg` | Uploaded next to `index.html` |
 
-## AWS sketch
+## AWS (Terraform)
 
-1. S3 bucket (private) + CloudFront OAC in front of it.  
-2. Upload via `./sync.sh` after `generated/aws.env` exists:
+`deploy/terraform` creates the private S3 bucket + CloudFront (OAC) and seeds a
+default page. After apply:
+
+```bash
+# setup.sh writes this automatically; or by hand:
+terraform -chdir=../terraform output -raw maintenance_url
+```
+
+Write `generated/aws.env` (or let `setup.sh` do it):
 
 ```bash
 BUCKET=…
@@ -67,5 +77,12 @@ CLOUDFRONT_DOMAIN=dxxxx.cloudfront.net
 MAINTENANCE_URL=https://dxxxx.cloudfront.net/index.html
 ```
 
-3. Optional pretty hostname: ACM DNS validation + `./attach-custom-domain.sh`
-   (uses `DOWN_HOST` or `down.$SITE_HOST`).
+Then customize + re-upload:
+
+```bash
+./configure.sh   # optional branding
+./sync.sh
+```
+
+Optional pretty hostname: ACM DNS validation + `./attach-custom-domain.sh`
+(uses `DOWN_HOST` or `down.$SITE_HOST`).

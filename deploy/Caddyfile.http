@@ -1,0 +1,16 @@
+# Plain HTTP for public-IP installs (no TLS / no domain).
+# Set CADDYFILE=Caddyfile.http and PHX_SCHEME=http in .env.
+:80 {
+	handle_path /hls/* {
+		reverse_proxy mediamtx:8888 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_down Location /live/ /hls/live/
+		}
+	}
+
+	handle {
+		encode gzip
+		reverse_proxy web:4000
+	}
+}

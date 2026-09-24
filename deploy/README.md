@@ -106,9 +106,11 @@ docker compose --env-file .env up -d --build
 ### AWS bootstrap (Terraform)
 
 To provision a matching EC2 host (VPC, SG, Elastic IP, AL2023, Docker bootstrap)
-from scratch, see **[terraform/README.md](./terraform/README.md)**. Terraform uses
-HCL (`.tf`); after `terraform apply`, finish `deploy/.env` on the instance and run
-compose as above.
+from scratch, see **[terraform/README.md](./terraform/README.md)** or run
+`./terraform/setup.sh`. No domain/Route 53 required — after apply, open
+**`http://<elastic-ip>`** (plain HTTP). First boot stamps `.env` and runs Compose;
+admin credentials are on the instance at `/opt/drone-feed/DEPLOY.txt`. Add DNS +
+Let's Encrypt later if you want (`CADDYFILE=Caddyfile`, `PHX_SCHEME=https`).
 
 - Migrations + optional admin bootstrap run via `deploy/entrypoint.sh`
 - Certs live in the `caddy_data` volume and renew automatically
@@ -184,6 +186,9 @@ For TLS on bare metal, run Caddy (or nginx) on the host pointing at Phoenix `:40
 
 ## After-hours (EC2 stopped)
 
-When the instance is powered off for cost savings, a static S3/CloudFront page
-(“DroneFeed is down after hours”) can be served via a Cloudflare Worker.
-See [maintenance/README.md](./maintenance/README.md).
+Terraform provisions a private S3 bucket + CloudFront page by default
+(`enable_maintenance_static`). To attach a domain and show that page when the
+instance is off, follow **Path 1 (Cloudflare)** or **Path 2 (Route 53)** in
+[terraform/README.md](./terraform/README.md#point-a-domain-at-the-box--offline-page-post-apply).
+Worker JS: [`terraform/workers/`](./terraform/workers/). Branding/sync:
+[maintenance/README.md](./maintenance/README.md).

@@ -24,6 +24,8 @@ services:
       DATABASE_URL: ecto://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB:-drone_feed_prod}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE}
       PHX_HOST: ${PHX_HOST:?set PHX_HOST}
+      PHX_SCHEME: ${PHX_SCHEME:-https}
+      PHX_URL_PORT: ${PHX_URL_PORT:-}
       MEDIA_HOST: ${MEDIA_HOST:-}
       MEDIA_IP: ${MEDIA_IP:-}
       RTMP_PORT: ${RTMP_PORT:-1935}
@@ -80,9 +82,11 @@ services:
       - "443:443/udp"
     environment:
       PHX_HOST: ${PHX_HOST:?set PHX_HOST}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      # Only used by the default Caddyfile (Let's Encrypt). Ignored for self-signed.
+      ACME_EMAIL: ${ACME_EMAIL:-unused@example.com}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # IP-first HTTP: CADDYFILE=Caddyfile.http  (or Caddyfile.selfsigned for TLS)
+      - ./${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

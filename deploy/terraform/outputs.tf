@@ -20,12 +20,17 @@ output "instance_id" {
 
 output "instance_private_ip" {
   description = "Private IPv4."
-  value       = aws_instance.app.private_ip
+  value       = var.associate_elastic_ip ? aws_network_interface.app[0].private_ip : aws_instance.app.private_ip
 }
 
 output "public_ip" {
-  description = "Stable public IPv4 (Elastic IP when enabled, else instance public IP)."
+  description = "Public IPv4 (Elastic IP when enabled)."
   value       = var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip
+}
+
+output "app_url" {
+  description = "Browser URL (plain HTTP — no TLS on IP-first installs)."
+  value       = "http://${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}"
 }
 
 output "ssh_hint" {
@@ -34,14 +39,49 @@ output "ssh_hint" {
 }
 
 output "next_steps" {
-  description = "Post-apply checklist."
+  description = "Post-apply checklist (IP-first HTTP; domain/DNS optional later)."
   value       = <<-EOT
-    1. DNS: create A record PHX_HOST → ${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
-    2. SSH/SSM into the host and edit /opt/drone-feed/deploy/.env
-       - MEDIA_IP=${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
-       - PHX_HOST / MEDIA_HOST / ACME_EMAIL / SECRET_KEY_BASE / POSTGRES_PASSWORD
-       - ADMIN_EMAIL / ADMIN_PASSWORD / SMTP_* as needed
-    3. cd /opt/drone-feed/deploy && docker compose --env-file .env up -d --build
-    4. Open https://PHX_HOST and complete bootstrap login
+    Public IP: ${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
+
+    1. Wait a few minutes for first-boot Docker build (cloud-init + compose).
+    2. Open http://<public_ip> in a browser (plain HTTP — not HTTPS).
+    3. Log in with credentials from /opt/drone-feed/DEPLOY.txt on the instance
+       (SSH/SSM: cat /opt/drone-feed/DEPLOY.txt).
+
+    Optional later: point a domain A record at the Elastic IP, set PHX_HOST/MEDIA_HOST,
+    CADDYFILE=Caddyfile, PHX_SCHEME=https, ACME_EMAIL=you@example.com, then recreate caddy.
+    ${var.enable_maintenance_static ? "\nAfter-hours page: ${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html\n  (Terraform wrote deploy/maintenance/generated/aws.env when using setup.sh — or copy terraform outputs.)\n  Cloudflare Worker still needed for failover; see deploy/maintenance/README.md." : ""}
+    ${var.enable_business_hours_schedule ? "\nBusiness hours: auto-start ${var.schedule_start_hour}:00 / stop ${var.schedule_stop_hour}:00 ${var.schedule_timezone} Mon–Fri." : ""}
   EOT
+}
+
+output "business_hours_schedule" {
+  description = "Weekday auto start/stop summary (null if disabled)."
+  value = var.enable_business_hours_schedule ? {
+    timezone   = var.schedule_timezone
+    start_cron = "Mon–Fri ${var.schedule_start_hour}:00"
+    stop_cron  = "Mon–Fri ${var.schedule_stop_hour}:00"
+    start_name = aws_scheduler_schedule.ec2_start[0].name
+    stop_name  = aws_scheduler_schedule.ec2_stop[0].name
+  } : null
+}
+
+output "maintenance_bucket" {
+  description = "After-hours S3 bucket name (null if disabled)."
+  value       = var.enable_maintenance_static ? aws_s3_bucket.maintenance[0].id : null
+}
+
+output "maintenance_distribution_id" {
+  description = "CloudFront distribution ID for the after-hours page (null if disabled)."
+  value       = var.enable_maintenance_static ? aws_cloudfront_distribution.maintenance[0].id : null
+}
+
+output "maintenance_cloudfront_domain" {
+  description = "CloudFront domain for the after-hours page (null if disabled)."
+  value       = var.enable_maintenance_static ? aws_cloudfront_distribution.maintenance[0].domain_name : null
+}
+
+output "maintenance_url" {
+  description = "HTTPS URL of the seeded after-hours index.html (null if disabled)."
+  value       = var.enable_maintenance_static ? "https://${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html" : null
 }

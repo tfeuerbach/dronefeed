@@ -26,3 +26,13 @@ git_ref      = "master"
 enable_ssm            = true
 enable_ses_send       = true
 associate_elastic_ip  = true
+
+# After-hours offline page (private S3 + CloudFront). Customize later via deploy/maintenance.
+# enable_maintenance_static = true
+# maintenance_bucket_name   = ""  # empty → name_prefix-after-hours-<account_id>
+
+# Weekday auto start/stop (EventBridge Scheduler). Off by default.
+# enable_business_hours_schedule = true
+# schedule_timezone   = "America/New_York"
+# schedule_start_hour = 8   # 8:00 local Mon–Fri
+# schedule_stop_hour  = 18  # 18:00 local Mon–Fri

@@ -1,0 +1,24 @@
+# Self-signed TLS for public-IP installs (no domain / Route53 yet).
+# Use via: CADDYFILE=Caddyfile.selfsigned in deploy/.env (see docker-compose).
+# Browsers will warn — accept the risk or add a domain later and switch to Caddyfile.
+{
+	# No ACME — local CA only
+	local_certs
+}
+
+{$PHX_HOST} {
+	tls internal
+
+	handle_path /hls/* {
+		reverse_proxy mediamtx:8888 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_down Location /live/ /hls/live/
+		}
+	}
+
+	handle {
+		encode gzip
+		reverse_proxy web:4000
+	}
+}

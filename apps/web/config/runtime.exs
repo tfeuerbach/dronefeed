@@ -28,8 +28,20 @@ if config_env() == :prod do
     System.get_env("PHX_HOST") ||
       raise """
       environment variable PHX_HOST is missing.
-      Example: feeds.example.com
+      Example: 34.202.91.90 (public IP) or feeds.example.com
       """
+
+  web_scheme =
+    case System.get_env("PHX_SCHEME", "https") |> String.downcase() do
+      "http" -> "http"
+      _ -> "https"
+    end
+
+  web_port =
+    case System.get_env("PHX_URL_PORT") do
+      v when is_binary(v) and v != "" -> String.to_integer(v)
+      _ -> if(web_scheme == "https", do: 443, else: 80)
+    end
 
   media_host =
     case System.get_env("MEDIA_HOST") do
@@ -85,8 +97,13 @@ if config_env() == :prod do
     end
 
   session_cookie_secure =
-    System.get_env("SESSION_COOKIE_SECURE", "false") in ~w(true 1 yes) or
-      session_same_site == "None"
+    cond do
+      System.get_env("SESSION_COOKIE_SECURE") in ~w(true 1 yes) -> true
+      System.get_env("SESSION_COOKIE_SECURE") in ~w(false 0 no) -> false
+      session_same_site == "None" -> true
+      web_scheme == "https" -> true
+      true -> false
+    end
 
   frame_ancestors =
     case System.get_env("FRAME_ANCESTORS") do
@@ -99,8 +116,8 @@ if config_env() == :prod do
     media_host: media_host,
     media_ip: media_ip,
     web_host: host,
-    web_scheme: "https",
-    web_port: 443,
+    web_scheme: web_scheme,
+    web_port: web_port,
     rtmp_port: String.to_integer(System.get_env("RTMP_PORT") || "1935"),
     rtsp_port: String.to_integer(System.get_env("RTSP_PORT") || "8554"),
     srt_port: String.to_integer(System.get_env("SRT_PORT") || "8890"),
@@ -158,11 +175,18 @@ if config_env() == :prod do
 
   config :drone_feed, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  origin =
+    if web_port in [80, 443] do
+      "#{web_scheme}://#{host}"
+    else
+      "#{web_scheme}://#{host}:#{web_port}"
+    end
+
   config :drone_feed, DroneFeedWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: web_port, scheme: web_scheme],
     http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT", "4000"))],
     secret_key_base: secret_key_base,
-    check_origin: ["https://#{host}"]
+    check_origin: [origin]
 
   mail_from_name =
     System.get_env("SMTP_FROM_NAME") || System.get_env("MAIL_FROM_NAME") || "DroneFeed"

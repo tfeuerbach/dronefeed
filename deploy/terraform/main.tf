@@ -234,17 +234,59 @@ resource "time_sleep" "iam_propagation" {
 }
 
 # -----------------------------------------------------------------------------
-# EC2 + Elastic IP
+# ENI + Elastic IP (EIP on ENI before boot so IMDS public-ipv4 is stable)
+# -----------------------------------------------------------------------------
+
+resource "aws_network_interface" "app" {
+  count = var.associate_elastic_ip ? 1 : 0
+
+  subnet_id       = aws_subnet.public.id
+  security_groups = [aws_security_group.app.id]
+
+  tags = {
+    Name = "${var.name_prefix}-eni"
+  }
+}
+
+resource "aws_eip" "app" {
+  count  = var.associate_elastic_ip ? 1 : 0
+  domain = "vpc"
+
+  tags = {
+    Name = "${var.name_prefix}-eip"
+  }
+}
+
+resource "aws_eip_association" "app" {
+  count = var.associate_elastic_ip ? 1 : 0
+
+  allocation_id        = aws_eip.app[0].id
+  network_interface_id = aws_network_interface.app[0].id
+}
+
+# -----------------------------------------------------------------------------
+# EC2
 # -----------------------------------------------------------------------------
 
 resource "aws_instance" "app" {
-  ami                         = data.aws_ssm_parameter.al2023_ami.value
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.app.id]
-  iam_instance_profile        = aws_iam_instance_profile.ec2.name
-  key_name                    = local.key_name != "" ? local.key_name : null
-  associate_public_ip_address = true
+  ami                  = data.aws_ssm_parameter.al2023_ami.value
+  instance_type        = var.instance_type
+  iam_instance_profile = aws_iam_instance_profile.ec2.name
+  key_name             = local.key_name != "" ? local.key_name : null
+
+  # EIP path: attach primary ENI that already has the Elastic IP.
+  # Non-EIP path: classic subnet launch with auto-assigned public IP.
+  subnet_id                   = var.associate_elastic_ip ? null : aws_subnet.public.id
+  vpc_security_group_ids      = var.associate_elastic_ip ? null : [aws_security_group.app.id]
+  associate_public_ip_address = var.associate_elastic_ip ? null : true
+
+  dynamic "network_interface" {
+    for_each = var.associate_elastic_ip ? [1] : []
+    content {
+      network_interface_id = aws_network_interface.app[0].id
+      device_index         = 0
+    }
+  }
 
   root_block_device {
     volume_type = "gp3"
@@ -265,7 +307,10 @@ resource "aws_instance" "app" {
     http_put_response_hop_limit = 2
   }
 
-  depends_on = [time_sleep.iam_propagation]
+  depends_on = [
+    time_sleep.iam_propagation,
+    aws_eip_association.app,
+  ]
 
   tags = {
     Name = "${var.name_prefix}-app"
@@ -274,20 +319,4 @@ resource "aws_instance" "app" {
   lifecycle {
     ignore_changes = [ami, user_data]
   }
-}
-
-resource "aws_eip" "app" {
-  count  = var.associate_elastic_ip ? 1 : 0
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.name_prefix}-eip"
-  }
-}
-
-resource "aws_eip_association" "app" {
-  count = var.associate_elastic_ip ? 1 : 0
-
-  instance_id   = aws_instance.app.id
-  allocation_id = aws_eip.app[0].id
 }

@@ -167,6 +167,24 @@ prompt_yn "Attach SES send policy to the instance role?" y || ENABLE_SES="false"
 ASSOCIATE_EIP="true"
 prompt_yn "Allocate Elastic IP (recommended)?" y || ASSOCIATE_EIP="false"
 
+echo
+echo "── After-hours offline page ──"
+ENABLE_MAINTENANCE="true"
+prompt_yn "Create S3 + CloudFront for the offline/maintenance page?" y || ENABLE_MAINTENANCE="false"
+
+echo
+echo "── Business hours (auto start/stop) ──"
+ENABLE_SCHEDULE="false"
+SCHEDULE_TZ="America/New_York"
+SCHEDULE_START=8
+SCHEDULE_STOP=18
+if prompt_yn "Auto start/stop EC2 on weekdays (saves money nights/weekends)?" y; then
+  ENABLE_SCHEDULE="true"
+  SCHEDULE_TZ="$(prompt "Timezone (IANA)" "America/New_York")"
+  SCHEDULE_START="$(prompt "Start hour Mon–Fri (0–23, local)" "8")"
+  SCHEDULE_STOP="$(prompt "Stop hour Mon–Fri (0–23, local)" "18")"
+fi
+
 if [[ -f "$TFVARS" ]]; then
   BACKUP="$TFVARS.bak.$(date +%Y%m%d%H%M%S)"
   cp "$TFVARS" "$BACKUP"
@@ -200,9 +218,15 @@ fi
   echo "git_ref      = $(hcl_str "$GIT_REF")"
   echo "deploy_user  = $(hcl_str "$DEPLOY_USER")"
   echo
-  echo "enable_ssm           = $ENABLE_SSM"
-  echo "enable_ses_send      = $ENABLE_SES"
-  echo "associate_elastic_ip = $ASSOCIATE_EIP"
+  echo "enable_ssm                 = $ENABLE_SSM"
+  echo "enable_ses_send            = $ENABLE_SES"
+  echo "associate_elastic_ip       = $ASSOCIATE_EIP"
+  echo "enable_maintenance_static  = $ENABLE_MAINTENANCE"
+  echo
+  echo "enable_business_hours_schedule = $ENABLE_SCHEDULE"
+  echo "schedule_timezone              = $(hcl_str "$SCHEDULE_TZ")"
+  echo "schedule_start_hour            = $SCHEDULE_START"
+  echo "schedule_stop_hour             = $SCHEDULE_STOP"
   echo
   echo "tags = {"
   echo "  Project     = $(hcl_str "$PROJECT")"
@@ -221,7 +245,6 @@ fi
     case "$k" in
       Project|Environment|Owner|CostCenter|ManagedBy) continue ;;
     esac
-    # HCL map keys: quote if not a simple identifier
     if [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       printf '  %s = %s\n' "$k" "$(hcl_str "$v")"
     else
@@ -237,6 +260,16 @@ echo
 echo "── Summary ──"
 echo "  Project=$PROJECT  Environment=$ENVIRONMENT  name_prefix=$NAME_PREFIX"
 echo "  region=$AWS_REGION  instance=$INSTANCE_TYPE"
+if [[ "$ENABLE_SCHEDULE" == true ]]; then
+  echo "  schedule: Mon–Fri ${SCHEDULE_START}:00→${SCHEDULE_STOP}:00 $SCHEDULE_TZ"
+else
+  echo "  schedule: disabled (24/7 until you stop manually)"
+fi
+if [[ "$ENABLE_MAINTENANCE" == true ]]; then
+  echo "  after-hours: S3 + CloudFront offline page (enabled)"
+else
+  echo "  after-hours: S3 + CloudFront offline page (disabled)"
+fi
 echo "  tags include ManagedBy=terraform (provider default) + your tags above"
 echo
 
@@ -262,8 +295,26 @@ if prompt_yn "Run terraform apply now?" n; then
   echo "── Outputs ──"
   terraform output
   echo
-  echo "Next: SSH/SSM in, edit /opt/drone-feed/deploy/.env (MEDIA_IP=public_ip), then:"
-  echo "  docker compose --env-file .env up -d --build"
+  echo "Open $(terraform output -raw app_url) in a browser (plain HTTP)."
+  echo "Wait a few minutes for the first Docker build, then log in with:"
+  echo "  cat /opt/drone-feed/DEPLOY.txt   # via SSH/SSM"
+
+  MAINT_URL="$(terraform output -raw maintenance_url 2>/dev/null || true)"
+  if [[ -n "$MAINT_URL" && "$MAINT_URL" != "null" ]]; then
+    GEN_DIR="$(cd "$ROOT/../maintenance" && pwd)/generated"
+    mkdir -p "$GEN_DIR"
+    cat >"$GEN_DIR/aws.env" <<EOF
+# Written by setup.sh from terraform outputs — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+BUCKET=$(terraform output -raw maintenance_bucket)
+DIST_ID=$(terraform output -raw maintenance_distribution_id)
+CLOUDFRONT_DOMAIN=$(terraform output -raw maintenance_cloudfront_domain)
+MAINTENANCE_URL=$MAINT_URL
+EOF
+    echo
+    echo "After-hours page: $MAINT_URL"
+    echo "Wrote $GEN_DIR/aws.env for deploy/maintenance/sync.sh"
+    echo "Cloudflare Worker still needed for domain failover — see deploy/maintenance/README.md"
+  fi
 else
   echo
   echo "Skipped apply. When ready:"

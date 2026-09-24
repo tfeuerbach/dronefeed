@@ -1,31 +1,36 @@
 /**
- * DroneFeed after-hours failover (Cloudflare Worker).
+ * DroneFeed after-hours failover — Cloudflare Worker
  *
- * DNS: A record for your site → origin Elastic IP, Proxied (orange cloud).
- * Route this Worker to: {{WORKER_ROUTE}}
+ * Paste into Cloudflare → Workers → Create → Quick edit.
+ * Attach a route: feeds.example.com/*
  *
- * Runtime variable (Settings → Variables):
- *   MAINTENANCE_URL = {{MAINTENANCE_URL}}
+ * Worker → Settings → Variables:
+ *   MAINTENANCE_URL = https://<maintenance_cloudfront_domain>/index.html
+ *   (from: terraform output -raw maintenance_url)
  *
- * When the origin host is down, serves the static maintenance page (HTTP 503).
- * Uses a short origin timeout so visitors are not stuck waiting on a powered-off box.
- * See also: deploy/terraform/workers/cloudflare-worker.js (ready-to-paste copy)
- * and deploy/terraform/README.md § "Path 1 — Cloudflare".
+ * DNS (must be Proxied / orange cloud or this Worker never runs):
+ *   Type  Name    Content              Proxy
+ *   A     feeds   <Elastic IP>         Proxied
+ *
+ * See deploy/terraform/README.md § "Subdomain + offline failover".
  */
+
+const ORIGIN_TIMEOUT_MS = 2500;
+
 export default {
   async fetch(request, env) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), {{ORIGIN_TIMEOUT_MS}});
+      const timer = setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
       const response = await fetch(request, { signal: controller.signal });
       clearTimeout(timer);
 
+      // Cloudflare origin errors when the EC2 box is powered off / unreachable
       if ([521, 522, 523, 525, 530].includes(response.status)) {
         return serveMaintenance(env, response.status);
       }
       return response;
     } catch {
-      // Origin unreachable / timed out while the app host is stopped
       return serveMaintenance(env, 522);
     }
   },
@@ -34,7 +39,7 @@ export default {
 async function serveMaintenance(env, originStatus) {
   const url = env.MAINTENANCE_URL;
   if (!url) {
-    return new Response("{{FALLBACK_TEXT}}", {
+    return new Response("DroneFeed is down after hours", {
       status: 503,
       headers: {
         "content-type": "text/plain; charset=utf-8",
@@ -59,7 +64,7 @@ async function serveMaintenance(env, originStatus) {
     });
   } catch {
     return new Response(
-      "<!doctype html><title>{{BRAND_NAME}}</title><p>{{FALLBACK_TEXT}}</p>",
+      "<!doctype html><title>DroneFeed</title><p>DroneFeed is down after hours</p>",
       {
         status: 503,
         headers: {

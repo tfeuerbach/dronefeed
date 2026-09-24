@@ -3,14 +3,18 @@ set -euxo pipefail
 
 # DroneFeed host bootstrap — Amazon Linux 2023
 # Mirrors production: Docker Compose stack under /opt/drone-feed, large UDP buffers.
+# IP-first: stamps plain HTTP .env from IMDS public IP and starts Compose once.
 
 DEPLOY_USER="${deploy_user}"
 GIT_REPO_URL="${git_repo_url}"
 GIT_REF="${git_ref}"
 INSTALL_ROOT="/opt/drone-feed"
+DEPLOY_DIR="$INSTALL_ROOT/deploy"
+CREDENTIALS_FILE="$INSTALL_ROOT/DEPLOY.txt"
+BOOTSTRAP_MARKER="$INSTALL_ROOT/.bootstrap-complete"
 
 dnf -y update
-dnf -y install docker git
+dnf -y install docker git openssl python3
 
 systemctl enable --now docker
 
@@ -49,24 +53,106 @@ fi
 rm -rf "$TMP_CLONE"
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_ROOT"
 
-sudo -u "$DEPLOY_USER" bash <<EOF
-set -euxo pipefail
-cd "$INSTALL_ROOT/deploy"
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  {
-    echo ""
-    echo "# --- cloud-init scaffold (set secrets + MEDIA_IP from terraform output public_ip) ---"
-  } >> .env
+# Wait for public IPv4 (EIP is on the primary ENI before first boot when Terraform uses ENI+EIP).
+PUBLIC_IP=""
+for _ in $(seq 1 60); do
+  TOKEN="$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" || true)"
+  if [[ -n "$TOKEN" ]]; then
+    PUBLIC_IP="$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" \
+      http://169.254.169.254/latest/meta-data/public-ipv4 || true)"
+  fi
+  if [[ -n "$PUBLIC_IP" ]]; then
+    break
+  fi
+  sleep 2
+done
+
+if [[ -z "$PUBLIC_IP" ]]; then
+  echo "WARN: no public-ipv4 from IMDS; Compose will not auto-start." >&2
+elif [[ -f "$BOOTSTRAP_MARKER" ]]; then
+  echo "Bootstrap already completed; skipping .env stamp and compose up."
+else
+  SECRET_KEY_BASE="$(openssl rand -base64 48 | tr -d '\n')"
+  POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -d '\n=/+' | cut -c1-24)"
+  ADMIN_PASSWORD="$(openssl rand -base64 18 | tr -d '\n=/+' | cut -c1-16)"
+  ADMIN_EMAIL="admin@$PUBLIC_IP.nip.io"
+
+  export DEPLOY_DIR PUBLIC_IP SECRET_KEY_BASE POSTGRES_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD
+
+  if [[ ! -f "$DEPLOY_DIR/.env" ]]; then
+    cp "$DEPLOY_DIR/.env.example" "$DEPLOY_DIR/.env"
+  fi
+
+  python3 - <<'PY'
+import os
+from pathlib import Path
+
+path = Path(os.environ["DEPLOY_DIR"]) / ".env"
+replacements = {
+    "PHX_HOST": os.environ["PUBLIC_IP"],
+    "MEDIA_IP": os.environ["PUBLIC_IP"],
+    "MEDIA_HOST": "",
+    "CADDYFILE": "Caddyfile.http",
+    "PHX_SCHEME": "http",
+    "SECRET_KEY_BASE": os.environ["SECRET_KEY_BASE"],
+    "POSTGRES_PASSWORD": os.environ["POSTGRES_PASSWORD"],
+    "ADMIN_EMAIL": os.environ["ADMIN_EMAIL"],
+    "ADMIN_PASSWORD": os.environ["ADMIN_PASSWORD"],
+}
+text = path.read_text()
+lines = []
+seen = set()
+for line in text.splitlines():
+    if not line or line.lstrip().startswith("#") or "=" not in line:
+        lines.append(line)
+        continue
+    key, _, _ = line.partition("=")
+    key = key.strip()
+    if key in replacements:
+        lines.append(f"{key}={replacements[key]}")
+        seen.add(key)
+    else:
+        lines.append(line)
+for key, value in replacements.items():
+    if key not in seen:
+        lines.append(f"{key}={value}")
+path.write_text("\n".join(lines) + "\n")
+PY
+
+  chown "$DEPLOY_USER:$DEPLOY_USER" "$DEPLOY_DIR/.env"
+  chmod 600 "$DEPLOY_DIR/.env"
+
+  cat >"$CREDENTIALS_FILE" <<CREDS
+DroneFeed first-boot credentials (plain HTTP — not TLS)
+URL:      http://$PUBLIC_IP
+Email:    $ADMIN_EMAIL
+Password: $ADMIN_PASSWORD
+
+Change the admin password after first login.
+This file is only on the instance: $CREDENTIALS_FILE
+CREDS
+  chown "$DEPLOY_USER:$DEPLOY_USER" "$CREDENTIALS_FILE"
+  chmod 600 "$CREDENTIALS_FILE"
+
+  (
+    cd "$DEPLOY_DIR"
+    docker compose --env-file .env up -d --build
+  ) >"$INSTALL_ROOT/compose-bootstrap.log" 2>&1 && touch "$BOOTSTRAP_MARKER" || {
+    echo "WARN: docker compose failed; see $INSTALL_ROOT/compose-bootstrap.log" >&2
+  }
+  chown "$DEPLOY_USER:$DEPLOY_USER" "$BOOTSTRAP_MARKER" 2>/dev/null || true
 fi
-EOF
 
 cat >/etc/motd <<MOTD
 DroneFeed host (${name_prefix})
 Repo: $INSTALL_ROOT
-Next:
-  1. Point DNS A record for PHX_HOST at this Elastic IP
-  2. Edit $INSTALL_ROOT/deploy/.env (SECRET_KEY_BASE, passwords, MEDIA_IP, ACME_EMAIL, …)
-  3. cd $INSTALL_ROOT/deploy && docker compose --env-file .env up -d --build
-See deploy/README.md and deploy/terraform/README.md
+
+Open http://$PUBLIC_IP in a browser (plain HTTP, no TLS).
+Admin credentials: $CREDENTIALS_FILE
+Compose log:       $INSTALL_ROOT/compose-bootstrap.log
+
+Optional later: point a domain A record at the Elastic IP, set
+  PHX_HOST / MEDIA_HOST / CADDYFILE=Caddyfile / PHX_SCHEME=https / ACME_EMAIL
+then recreate caddy. See deploy/terraform/README.md
 MOTD

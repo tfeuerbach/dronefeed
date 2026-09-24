@@ -98,9 +98,55 @@ variable "enable_ses_send" {
 }
 
 variable "associate_elastic_ip" {
-  description = "Allocate and associate an Elastic IP (needed for stable MEDIA_IP / DNS / ACME)."
+  description = "Allocate an Elastic IP on the primary ENI before boot (required for stable IP-first HTTP)."
   type        = bool
   default     = true
+}
+
+variable "enable_maintenance_static" {
+  description = "Provision private S3 + CloudFront (OAC) for the after-hours offline page (deploy/maintenance)."
+  type        = bool
+  default     = true
+}
+
+variable "maintenance_bucket_name" {
+  description = "Optional override for the after-hours S3 bucket name (must be globally unique). Empty = name_prefix-after-hours-<account_id>."
+  type        = string
+  default     = ""
+}
+
+variable "enable_business_hours_schedule" {
+  description = "Auto start/stop the EC2 instance on weekdays via EventBridge Scheduler."
+  type        = bool
+  default     = false
+}
+
+variable "schedule_timezone" {
+  description = "IANA timezone for the business-hours schedule (e.g. America/New_York)."
+  type        = string
+  default     = "America/New_York"
+}
+
+variable "schedule_start_hour" {
+  description = "Local hour (0–23) to start the instance Mon–Fri when the schedule is enabled."
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.schedule_start_hour >= 0 && var.schedule_start_hour <= 23
+    error_message = "schedule_start_hour must be 0–23."
+  }
+}
+
+variable "schedule_stop_hour" {
+  description = "Local hour (0–23) to stop the instance Mon–Fri when the schedule is enabled."
+  type        = number
+  default     = 18
+
+  validation {
+    condition     = var.schedule_stop_hour >= 0 && var.schedule_stop_hour <= 23
+    error_message = "schedule_stop_hour must be 0–23."
+  }
 }
 
 variable "tags" {
