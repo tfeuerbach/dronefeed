@@ -47,7 +47,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
 
           <div :if={@create_mode == :upload} class="space-y-4">
             <p class="text-sm text-base-content/60">
-              FMV / MP4 / TS plus optional SRT or KLV telemetry. Files stay in the shared library for
+              FMV / MP4 / TS. Sidecar .srt and .klv are optional — DJI GPS muxed into the video, and KLV already inside a TS, are read from the file. Files stay in the shared library for
               {@retention_days} days. Drag and drop into a zone or use Choose file.
             </p>
             <.form
@@ -67,7 +67,7 @@ defmodule DroneFeedWeb.FlightLive.Index do
                 <.upload_dropzone
                   upload={@uploads.srt}
                   label="Telemetry (.srt)"
-                  hint="Consumer drone metadata — optional"
+                  hint="Optional sidecar. DJI GPS muxed into the video is read automatically."
                 />
                 <.upload_dropzone
                   upload={@uploads.klv}

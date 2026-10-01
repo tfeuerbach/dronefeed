@@ -58,4 +58,32 @@ defmodule DroneFeed.TelemetryTest do
     refute point.raw =~ "-->"
     refute point.raw =~ "SrtCnt"
   end
+
+  @embedded_gps """
+  1
+  00:00:00,000 --> 00:00:01,000
+  F/2.8, SS 781.10, ISO 100, EV 0, DZOOM 2.000, GPS (-79.3895, 35.4445, 27), D 1.97m, H 16.30m, H.S 0.00m/s, V.S -0.00m/s
+
+  2
+  00:00:01,000 --> 00:00:02,000
+  F/2.8, SS 781.10, ISO 100, EV 0, DZOOM 2.000, GPS (-79.3896, 35.4446, 26.5), D 1.97m, H 16.30m, H.S 0.00m/s, V.S -0.00m/s
+  """
+
+  test "parse_srt reads muxed DJI GPS tuples as longitude, latitude, altitude" do
+    [first, second] = Telemetry.parse_srt(@embedded_gps)
+
+    assert first.t_ms == 0
+    assert first.lat == 35.4445
+    assert first.lon == -79.3895
+    assert first.alt == 27.0
+    assert first.raw =~ "ISO 100"
+    assert first.raw =~ "DZOOM 2.000"
+    assert first.raw =~ "35.444500, -79.389500"
+    assert first.raw =~ "27.0 m"
+
+    assert second.t_ms == 1000
+    assert second.lat == 35.4446
+    assert second.lon == -79.3896
+    assert second.alt == 26.5
+  end
 end

@@ -1,9 +1,16 @@
 defmodule DroneFeed.Telemetry do
   @moduledoc """
-  Parses consumer DJI .SRT telemetry and enterprise KLV tracks into map points
-  for the browser UI (lat/lon/alt). This is separate from Public-feed STANAG
-  egress: derived heading/speed for research tools are added in `mux_to_stanag.py`,
-  not here.
+  Parses consumer DJI telemetry and enterprise KLV tracks into map points
+  for the browser UI (lat/lon/alt).
+
+  Lookup order: an uploaded `.srt` sidecar, a `.klv` sidecar, in-band MISB KLV
+  on an MPEG-TS (including files misnamed `.mp4` / `.H264`), then GPS cues
+  muxed into the video as timed text. That last path is how DJI `.MP4` files
+  that do not ship a separate `.srt` carry telemetry. A MOV/MP4 private data
+  box such as `DJI.Meta` is not KLV.
+
+  This is separate from Public-feed STANAG egress: derived heading/speed for
+  research tools are added in `mux_to_stanag.py`, not here.
   """
 
   alias DroneFeed.Flights.Flight
@@ -11,66 +18,205 @@ defmodule DroneFeed.Telemetry do
   def for_flight(%Flight{} = flight) do
     cond do
       srt?(flight) -> from_srt(flight.srt_path)
-      klv_source?(flight) -> from_klv_source(flight)
-      true -> empty("No telemetry sidecar or in-band KLV detected yet.")
+      klv_sidecar?(flight) -> from_klv_source(flight)
+      true -> from_video(flight)
     end
   end
 
   defp srt?(%Flight{srt_path: path}) when is_binary(path), do: File.exists?(path)
   defp srt?(_), do: false
 
-  defp klv_source?(%Flight{klv_path: path}) when is_binary(path), do: File.exists?(path)
+  defp klv_sidecar?(%Flight{klv_path: path}) when is_binary(path), do: File.exists?(path)
+  defp klv_sidecar?(_), do: false
 
-  defp klv_source?(%Flight{video_path: path}) when is_binary(path) do
-    File.exists?(path) and has_inband_klv?(path)
+  defp from_video(%Flight{video_path: path} = flight) when is_binary(path) do
+    if File.exists?(path) do
+      probe = probe_media(path)
+
+      cond do
+        klv_stream?(probe) and subtitle_stream?(probe) ->
+          case from_klv_source(flight) do
+            %{source: :klv} = parsed -> parsed
+            _ -> from_embedded_subtitle(flight)
+          end
+
+        klv_stream?(probe) ->
+          from_klv_source(flight)
+
+        subtitle_stream?(probe) ->
+          from_embedded_subtitle(flight)
+
+        true ->
+          empty("No telemetry sidecar, muxed DJI GPS, or in-band KLV detected yet.")
+      end
+    else
+      empty("No telemetry sidecar, muxed DJI GPS, or in-band KLV detected yet.")
+    end
   end
 
-  defp klv_source?(_), do: false
+  defp from_video(_flight) do
+    empty("No telemetry sidecar, muxed DJI GPS, or in-band KLV detected yet.")
+  end
 
   # Content-based: extension is irrelevant (.H264 / .mp4 can be MPEG-TS + KLV).
-  defp has_inband_klv?(path) do
+  # `DJI.Meta` is codec_type=data on a MOV container and must not match.
+  defp probe_media(path) do
     case System.cmd(
            "ffprobe",
            [
              "-v",
              "error",
              "-show_entries",
-             "stream=codec_type,codec_name",
+             "stream=codec_type,codec_name,codec_tag_string:format=format_name",
              "-of",
-             "csv=p=0",
+             "json",
              path
            ],
            stderr_to_stdout: true
          ) do
       {out, 0} ->
-        out
-        |> String.split(["\n", "\r"], trim: true)
-        |> Enum.any?(fn line ->
-          parts =
-            line
-            |> String.downcase()
-            |> String.split(",", trim: true)
-
-          "data" in parts or "klv" in parts
-        end)
+        case Jason.decode(out) do
+          {:ok, data} when is_map(data) -> data
+          _ -> %{}
+        end
 
       _ ->
-        false
+        %{}
     end
+  end
+
+  defp klv_stream?(probe) when is_map(probe) do
+    format = get_in(probe, ["format", "format_name"]) || ""
+    mpegts? = String.contains?(format, "mpegts")
+
+    Enum.any?(probe["streams"] || [], fn stream ->
+      type = stream["codec_type"] || ""
+      name = String.downcase(stream["codec_name"] || "")
+      tag = String.downcase(stream["codec_tag_string"] || "")
+
+      String.contains?(name, "klv") or String.starts_with?(tag, "klv") or
+        (type == "data" and mpegts?)
+    end)
+  end
+
+  defp subtitle_stream?(probe) when is_map(probe) do
+    Enum.any?(probe["streams"] || [], &(&1["codec_type"] == "subtitle"))
   end
 
   def from_srt(path) when is_binary(path) do
     text = File.read!(path)
     points = parse_srt(text)
+    present(points, :srt, raw_sidecar_preview(text))
+  end
 
+  defp from_embedded_subtitle(%Flight{video_path: path}) do
+    cache = Path.join(Path.dirname(path), "telemetry_track.json")
+
+    case ensure_embedded_json(path, cache) do
+      {:ok, points} ->
+        preview =
+          points
+          |> Enum.take(8)
+          |> Enum.map(& &1.raw)
+          |> Enum.join("\n\n")
+
+        present(points, :embedded_srt, preview)
+
+      {:error, :no_gps} ->
+        empty("Subtitle track found, but it has no DJI GPS metadata.")
+
+      {:error, reason} ->
+        empty("Could not read muxed DJI metadata (#{inspect(reason)}).")
+    end
+  end
+
+  defp present(points, source, raw_preview) do
     %{
-      source: :srt,
+      source: source,
       points: downsample(points, 400),
       all_count: length(points),
-      raw_preview: raw_sidecar_preview(text),
+      raw_preview: raw_preview,
       stats: stats(points),
       message: nil
     }
+  end
+
+  defp ensure_embedded_json(video, cache) do
+    case read_fresh_cache(cache, video) do
+      {:ok, points} -> {:ok, points}
+      :stale -> write_embedded_cache(video, cache)
+    end
+  end
+
+  defp read_fresh_cache(cache, source) do
+    if File.exists?(cache) and fresh?(cache, source) do
+      case decode_cache(cache) do
+        {:ok, [_ | _] = points} -> {:ok, points}
+        _ -> :stale
+      end
+    else
+      :stale
+    end
+  end
+
+  defp write_embedded_cache(video, cache) do
+    with {:ok, text} <- extract_subtitle_srt(video) do
+      case parse_srt(text) do
+        [] ->
+          {:error, :no_gps}
+
+        points ->
+          File.mkdir_p!(Path.dirname(cache))
+          File.write!(cache, Jason.encode!(points_for_cache(points)))
+          {:ok, points}
+      end
+    end
+  end
+
+  defp points_for_cache(points) do
+    Enum.map(points, fn point ->
+      %{
+        "t_ms" => point.t_ms,
+        "lat" => point.lat,
+        "lon" => point.lon,
+        "alt" => point.alt,
+        "raw" => point.raw
+      }
+    end)
+  end
+
+  defp extract_subtitle_srt(video) do
+    tmp =
+      Path.join(System.tmp_dir!(), "df-embedded-srt-#{System.unique_integer([:positive])}.srt")
+
+    args = [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      video,
+      "-map",
+      "0:s:0",
+      "-f",
+      "srt",
+      tmp
+    ]
+
+    try do
+      case System.cmd("ffmpeg", args, stderr_to_stdout: true) do
+        {_, 0} ->
+          case File.read(tmp) do
+            {:ok, text} -> {:ok, text}
+            {:error, reason} -> {:error, reason}
+          end
+
+        {out, code} ->
+          {:error, {code, String.slice(out, 0, 200)}}
+      end
+    after
+      File.rm(tmp)
+    end
   end
 
   def from_klv_source(%Flight{} = flight) do
@@ -157,25 +303,15 @@ defmodule DroneFeed.Telemetry do
   end
 
   defp parse_srt_block(block) do
-    geo =
-      Regex.run(
-        ~r/latitude:\s*([-\d.]+).*?longitude:\s*([-\d.]+).*?altitude:\s*([-\d.]+)/is,
-        block
-      )
-
     timing = Regex.run(~r/(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->/, block)
 
-    with [_, lat_s, lon_s, alt_s] <- geo,
+    with {lat, lon, alt} <- geo_sample(block),
          [_, hh, mm, ss, ms] <- timing do
       t_ms =
         String.to_integer(hh) * 3_600_000 +
           String.to_integer(mm) * 60_000 +
           String.to_integer(ss) * 1_000 +
           String.to_integer(String.pad_trailing(ms, 3, "0"))
-
-      lat = String.to_float(lat_s)
-      lon = String.to_float(lon_s)
-      alt = String.to_float(alt_s)
 
       %{
         t_ms: t_ms,
@@ -184,6 +320,42 @@ defmodule DroneFeed.Telemetry do
         alt: alt,
         raw: format_srt_cue(block, t_ms, lat, lon, alt)
       }
+    else
+      _ -> nil
+    end
+  end
+
+  # Sidecar `.srt` uses `[latitude:] [longitude:] [altitude:]`.
+  # DJI timed text muxed into the MP4 uses `GPS (longitude, latitude, altitude)`.
+  defp geo_sample(block) do
+    bracket =
+      Regex.run(
+        ~r/latitude:\s*([-\d.]+).*?longitude:\s*([-\d.]+).*?altitude:\s*([-\d.]+)/is,
+        block
+      )
+
+    gps =
+      Regex.run(~r/GPS\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i, block)
+
+    cond do
+      match?([_, _, _, _], bracket) ->
+        [_, lat_s, lon_s, alt_s] = bracket
+        parse_trio(lat_s, lon_s, alt_s)
+
+      match?([_, _, _, _], gps) ->
+        [_, lon_s, lat_s, alt_s] = gps
+        parse_trio(lat_s, lon_s, alt_s)
+
+      true ->
+        nil
+    end
+  end
+
+  defp parse_trio(lat_s, lon_s, alt_s) do
+    with {lat, _} <- Float.parse(lat_s),
+         {lon, _} <- Float.parse(lon_s),
+         {alt, _} <- Float.parse(alt_s) do
+      {lat, lon, alt}
     else
       _ -> nil
     end
@@ -229,6 +401,8 @@ defmodule DroneFeed.Telemetry do
       |> Enum.reject(&is_nil/1)
       |> Enum.join("  ·  ")
 
+    gps_line = if String.contains?(String.upcase(body), "GPS"), do: body
+
     lines =
       [
         Enum.join(
@@ -243,6 +417,7 @@ defmodule DroneFeed.Telemetry do
         meta[:captured],
         if(camera != "", do: camera),
         if(lens != "", do: lens),
+        gps_line,
         "#{fmt_coord(lat)}, #{fmt_coord(lon)}  ·  #{fmt_alt(alt)}"
       ]
       |> Enum.reject(&is_nil/1)

@@ -141,7 +141,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
             <div class="df-flight-band-head">
               <div>
                 <h2>Raw telemetry</h2>
-                <p>Sidecar dump · formatted cue below tracks playback</p>
+                <p>Formatted cue below tracks playback</p>
               </div>
             </div>
             <pre class="df-flight-raw-body">{@telemetry.raw_preview}</pre>
@@ -398,6 +398,7 @@ defmodule DroneFeedWeb.FlightLive.Show do
   defp fmt_alt(v), do: "#{v} m"
 
   defp source_label(:srt), do: "DJI .SRT"
+  defp source_label(:embedded_srt), do: "DJI metadata"
   defp source_label(:klv), do: "MISB KLV"
   defp source_label(_), do: "none"
 end

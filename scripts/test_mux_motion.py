@@ -21,8 +21,10 @@ from mux_to_stanag import (  # noqa: E402
     infer_motion,
     mux_video_with_timed_klv,
     parse_dji_srt,
+    parse_dji_srt_text,
     probe_has_data_stream,
     probe_is_mpegts,
+    stream_is_inband_klv,
     timed_klv_from_srt,
     write_klv_from_srt,
 )
@@ -241,6 +243,44 @@ class InbandDetectionTests(unittest.TestCase):
                 stderr=subprocess.DEVNULL,
             )
             self.assertGreater(len(raw), 50_000)
+
+
+class EmbeddedDjiSrtTests(unittest.TestCase):
+    def test_gps_tuple_is_longitude_latitude_altitude(self) -> None:
+        text = """1
+00:00:01,500 --> 00:00:02,500
+F/2.8, ISO 100, GPS (-79.3895, 35.4445, 27), H 16.30m
+
+2
+00:00:02,500 --> 00:00:03,500
+GPS (-79.3896, 35.4446, 26)
+"""
+        cues = parse_dji_srt_text(text)
+        self.assertEqual(len(cues), 2)
+        self.assertAlmostEqual(cues[0].lat, 35.4445)
+        self.assertAlmostEqual(cues[0].lon, -79.3895)
+        self.assertAlmostEqual(cues[0].alt, 27.0)
+        self.assertAlmostEqual((cues[1].ts - cues[0].ts).total_seconds(), 1.0)
+        self.assertEqual(cues[0].ts.year, 1970)
+
+    def test_wall_clock_still_wins_over_the_srt_arrow(self) -> None:
+        text = """1
+00:00:00,000 --> 00:00:00,033
+2023-01-13 12:52:03,349,060
+[latitude: 1.0] [longitude: 2.0] [altitude: 3.0]
+"""
+        [cue] = parse_dji_srt_text(text)
+        self.assertEqual(cue.ts.year, 2023)
+        self.assertEqual(cue.ts.hour, 12)
+        self.assertEqual(cue.lat, 1.0)
+        self.assertEqual(cue.lon, 2.0)
+
+    def test_mov_private_data_is_not_inband_klv(self) -> None:
+        self.assertFalse(
+            stream_is_inband_klv("data", "unknown", "priv", "mov,mp4,m4a,3gp,3g2,mj2")
+        )
+        self.assertTrue(stream_is_inband_klv("data", "unknown", "priv", "mpegts"))
+        self.assertTrue(stream_is_inband_klv("data", "klv", "klva", "mov,mp4"))
 
 
 if __name__ == "__main__":

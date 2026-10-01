@@ -2,9 +2,10 @@
 """Normalize flight assets into a single MPEG-TS with MISB ST 0601 KLV.
 
 Supported inputs:
-  - Any container with an in-band data/KLV stream (``.ts``, ``.mpg``, ``.H264``,
+  - Any container with in-band MISB KLV (``.ts``, ``.mpg``, ``.H264``,
     ``.mp4`` that is actually MPEG-TS, etc.) → remux/copy (filename-agnostic)
   - Video + DJI .SRT telemetry sidecar                 → SRT→KLV→mux
+  - Video with DJI GPS muxed as timed text (no sidecar) → extract→KLV→mux
   - Video + raw .klv sidecar                           → mux
 
 Consumer DJI .SRT cues typically only carry lat/lon/alt. We still emit those
@@ -28,7 +29,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from klvdata.common import ber_encode, datetime_to_bytes, float_to_bytes, packet_checksum
@@ -161,69 +162,178 @@ def encode_uas_packet(
     return packet[:-2] + packet_checksum(packet)
 
 
-def parse_dji_srt(path: Path) -> list[GpsCue]:
-    text = path.read_text(errors="ignore")
+_BRACKET_GEO = re.compile(
+    r"latitude:\s*([-\d.]+).*?longitude:\s*([-\d.]+).*?altitude:\s*([-\d.]+)",
+    re.I | re.S,
+)
+# DJI timed text muxed into an MP4: longitude, latitude, altitude.
+_GPS_TUPLE = re.compile(
+    r"GPS\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)",
+    re.I,
+)
+_ARROW = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->")
+_WALL = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})[,.](\d+)")
+
+
+def cue_geo(block: str) -> tuple[float, float, float] | None:
+    """Return (lat, lon, alt). Bracket fields are lat/lon; GPS() is lon/lat."""
+    bracket = _BRACKET_GEO.search(block)
+    if bracket:
+        lat, lon, alt = map(float, bracket.groups())
+        return lat, lon, alt
+    gps = _GPS_TUPLE.search(block)
+    if gps:
+        lon, lat, alt = map(float, gps.groups())
+        return lat, lon, alt
+    return None
+
+
+def cue_timestamp(block: str, fallback_index: int) -> datetime:
+    """Wall-clock in the cue wins; otherwise the SRT arrow; else ~30 fps."""
+    wall = _WALL.search(block)
+    if wall:
+        base = datetime.strptime(wall.group(1), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+        frac = wall.group(2)[:6].ljust(6, "0")
+        return base.replace(microsecond=int(frac))
+
+    arrow = _ARROW.search(block)
+    if arrow:
+        hh, mm, ss, ms = arrow.groups()
+        ms_i = int(ms.ljust(3, "0")[:3])
+        return datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(
+            hours=int(hh),
+            minutes=int(mm),
+            seconds=int(ss),
+            milliseconds=ms_i,
+        )
+
+    return datetime.fromtimestamp(fallback_index / 30.0, tz=timezone.utc)
+
+
+def parse_dji_srt_text(text: str) -> list[GpsCue]:
     blocks = re.split(r"\n\s*\n", text.strip())
     cues: list[GpsCue] = []
-
     for block in blocks:
-        geo = re.search(
-            r"latitude:\s*([-\d.]+).*?longitude:\s*([-\d.]+).*?altitude:\s*([-\d.]+)",
-            block,
-            re.I | re.S,
-        )
-        if not geo:
+        geo = cue_geo(block)
+        if geo is None:
             continue
-        lat, lon, alt = map(float, geo.groups())
-
-        ts_match = re.search(
-            r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})[,.](\d+)",
-            block,
-        )
-        if ts_match:
-            base = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
-            frac = ts_match.group(2)[:6].ljust(6, "0")
-            ts = base.replace(microsecond=int(frac))
-        else:
-            # Fall back to synthetic timeline (~30 fps)
-            ts = datetime.fromtimestamp(len(cues) / 30.0, tz=timezone.utc)
-
-        cues.append(GpsCue(ts, lat, lon, alt))
-
+        lat, lon, alt = geo
+        cues.append(GpsCue(cue_timestamp(block, len(cues)), lat, lon, alt))
     return cues
 
 
+def parse_dji_srt(path: Path) -> list[GpsCue]:
+    return parse_dji_srt_text(path.read_text(errors="ignore"))
+
+
+def stream_is_inband_klv(
+    codec_type: str, codec_name: str, codec_tag: str, format_name: str
+) -> bool:
+    """Real MISB KLV, not a MOV private box such as DJI.Meta.
+
+    A codec name or tag containing ``klv`` always counts. A ``data`` elementary
+    stream counts only inside MPEG-TS — that is how enterprise KLVA is muxed.
+    MOV/MP4 ``priv`` / ``unknown`` data is proprietary drone metadata.
+    """
+    name = (codec_name or "").lower()
+    tag = (codec_tag or "").lower()
+    if "klv" in name or tag.startswith("klv"):
+        return True
+    return (codec_type or "").lower() == "data" and "mpegts" in (format_name or "").lower()
+
+
 def probe_has_data_stream(path: Path) -> bool:
-    """True when the file carries an in-band data/KLV elementary stream.
+    """True when the file carries in-band MISB KLV.
 
     Detection is content-based (ffprobe), not filename — ``Truck.H264`` and
     ``Esri_multiplexer_0.mp4`` are MPEG-TS with KLVA despite their extensions.
+    A DJI ``.MP4`` private data box (``DJI.Meta``) is not KLV.
     """
     try:
-        out = subprocess.check_output(
+        streams = subprocess.check_output(
             [
                 "ffprobe",
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type,codec_name",
+                "stream=codec_type,codec_name,codec_tag_string",
                 "-of",
                 "csv=p=0",
                 str(path),
             ],
             text=True,
         )
-        for line in out.splitlines():
-            parts = [p.strip().lower() for p in line.split(",") if p.strip()]
-            if not parts:
-                continue
-            if "data" in parts or "klv" in parts:
-                return True
-        return False
+        format_name = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=format_name",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            text=True,
+        ).strip()
     except Exception:
         return False
+
+    for line in streams.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        while len(parts) < 3:
+            parts.append("")
+        if stream_is_inband_klv(parts[0], parts[1], parts[2], format_name):
+            return True
+    return False
+
+
+def probe_has_subtitle_stream(path: Path) -> bool:
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "s",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            text=True,
+        )
+    except Exception:
+        return False
+    return any("subtitle" in line.lower() for line in out.splitlines())
+
+
+def extract_embedded_srt(video: Path, dest: Path) -> bool:
+    """Dump the first subtitle track as SRT. False when the track has no cues."""
+    try:
+        subprocess.check_call(
+            [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(video),
+                "-map",
+                "0:s:0",
+                "-f",
+                "srt",
+                str(dest),
+            ]
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return dest.exists() and dest.stat().st_size > 0
 
 
 def probe_is_mpegts(path: Path) -> bool:
@@ -615,7 +725,8 @@ def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None
     has_data = probe_has_data_stream(video)
     is_ts = ext in TS_EXTS or probe_is_mpegts(video)
 
-    # In-band KLV/data wins over the filename — remux every stream as-is.
+    # Real in-band KLV wins over the filename — remux every stream as-is.
+    # Sidecars still take priority so an explicit .srt/.klv can replace it.
     if has_data and not srt and not klv:
         remux_ts(video, output)
         stamp_klva(output)
@@ -642,6 +753,19 @@ def build(video: Path, output: Path, srt: Path | None, klv: Path | None) -> None
             file=sys.stderr,
         )
         return
+
+    if probe_has_subtitle_stream(video):
+        with tempfile.TemporaryDirectory() as tmp:
+            embedded = Path(tmp) / "embedded.srt"
+            if extract_embedded_srt(video, embedded) and parse_dji_srt(embedded):
+                timed = timed_klv_from_srt(embedded)
+                mux_video_with_timed_klv(video, timed, output)
+                stamp_klva(output)
+                print(
+                    f"muxed video+embedded-srt({len(timed)} cues)→timed-klv → {output}",
+                    file=sys.stderr,
+                )
+                return
 
     if is_ts:
         remux_ts(video, output)

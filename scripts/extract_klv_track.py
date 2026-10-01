@@ -76,12 +76,29 @@ def as_timestamp_ms(element) -> int | None:
     return None
 
 
+def iter_klv_packets(klv_bytes: bytes):
+    """Yield packets until the stream ends or the bytes are not KLV.
+
+    ``StreamParser`` raises inside ``__next__`` (for example ``OverflowError``
+    on a DJI private metadata box). That exception is outside ``packet_items``,
+    so it has to be caught on the iterator itself.
+    """
+    parser = iter(StreamParser(klv_bytes))
+    while True:
+        try:
+            yield next(parser)
+        except StopIteration:
+            return
+        except Exception as exc:
+            raise SystemExit(f"KLV parse stopped: {exc}") from exc
+
+
 def decode_points(klv_bytes: bytes, limit: int = 2000) -> list[dict]:
     points: list[dict] = []
     idx = 0
     t0: int | None = None
 
-    for packet in StreamParser(klv_bytes):
+    for packet in iter_klv_packets(klv_bytes):
         try:
             items = packet_items(packet)
         except Exception:
