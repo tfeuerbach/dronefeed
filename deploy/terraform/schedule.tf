@@ -1,5 +1,6 @@
 # Weekday start/stop via EventBridge Scheduler (timezone-aware cron).
-# Default off — enable with enable_business_hours_schedule = true (e.g. 8→18 local).
+# Default on: enable_business_hours_schedule = true (8→18 local Mon–Fri).
+# wake.sh adds a one-shot stop for after-hours test windows without removing these.
 
 data "aws_iam_policy_document" "scheduler_assume" {
   count = var.enable_business_hours_schedule ? 1 : 0
@@ -37,6 +38,33 @@ data "aws_iam_policy_document" "scheduler_ec2" {
     sid       = "Describe"
     actions   = ["ec2:DescribeInstances"]
     resources = ["*"]
+  }
+
+  # wake.sh may temporarily disable weekday stop; one-shot restore re-enables it.
+  statement {
+    sid = "ManageWakeAndWeekdaySchedules"
+    actions = [
+      "scheduler:GetSchedule",
+      "scheduler:UpdateSchedule",
+      "scheduler:CreateSchedule",
+      "scheduler:DeleteSchedule",
+    ]
+    resources = [
+      "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/${var.name_prefix}-ec2-stop",
+      "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/${var.name_prefix}-ec2-wake-stop",
+      "arn:aws:scheduler:${var.aws_region}:${data.aws_caller_identity.current.account_id}:schedule/default/${var.name_prefix}-ec2-wake-restore",
+    ]
+  }
+
+  statement {
+    sid       = "PassSelf"
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.scheduler[0].arn]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["scheduler.amazonaws.com"]
+    }
   }
 }
 

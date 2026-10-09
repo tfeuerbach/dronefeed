@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Interactive DroneFeed AWS spin-up helper.
-# Walks through terraform.tfvars (including custom project tags), then optional init/plan/apply.
+# Writes terraform.tfvars + secrets.auto.tfvars, provisions SSH key, then optional apply.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -8,6 +8,9 @@ cd "$ROOT"
 
 TFVARS="$ROOT/terraform.tfvars"
 SECRETS_TFVARS="$ROOT/secrets.auto.tfvars"
+KEYS_DIR="$ROOT/keys"
+GENERATED_KEY="$KEYS_DIR/dronefeed_ed25519"
+SSH_PRIVATE_KEY_PATH=""
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -65,14 +68,23 @@ slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
 }
 
+gen_admin_password() {
+  # ≥8 chars, digit + symbol (app password rules)
+  local base sym
+  base="$(openssl rand -base64 12 | tr -d '\n=/+' | cut -c1-10)"
+  sym='!'
+  echo "${base}1${sym}"
+}
+
 echo
 echo "DroneFeed — Terraform spin-up wizard"
 echo "===================================="
+echo "IP-first stack (HTTP on Elastic IP). DNS/HTTPS later in another account if needed."
 echo "Writes $TFVARS (gitignored) and can run terraform for you."
-echo "Resources always get ManagedBy=terraform; you choose Project and other tags."
 echo
 
 need_cmd terraform
+need_cmd openssl
 
 if command -v aws >/dev/null 2>&1; then
   if aws sts get-caller-identity >/dev/null 2>&1; then
@@ -81,7 +93,7 @@ if command -v aws >/dev/null 2>&1; then
     echo "warning: aws sts get-caller-identity failed — check credentials before apply."
   fi
 else
-  echo "note: aws CLI not found — OK if AWS_* / shared credentials are configured for Terraform."
+  echo "note: aws CLI not found — OK if credentials are configured for Terraform."
 fi
 echo
 
@@ -118,62 +130,71 @@ ROOT_GB="$(prompt "Root volume GiB" "80")"
 AZ="$(prompt "Availability zone (blank = first in region)" "")"
 
 echo
-echo "── Access ──"
-echo "  1) Paste / detect SSH public key (Terraform creates key pair)"
-echo "  2) Existing EC2 key pair name"
-echo "  3) SSM only (no SSH key)"
-ACCESS="$(prompt "Access mode" "1")"
+echo "── SSH access (dronefeed user) ──"
 PUBLIC_KEY=""
 KEY_NAME=""
 ENABLE_SSM="true"
 
-case "$ACCESS" in
-  1)
-    DEFAULT_PUB=""
-    for cand in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
-      if [[ -f "$cand" ]]; then DEFAULT_PUB="$cand"; break; fi
-    done
-    if [[ -n "$DEFAULT_PUB" ]] && prompt_yn "Use public key from $DEFAULT_PUB?" y; then
-      PUBLIC_KEY="$(tr -d '\n' <"$DEFAULT_PUB")"
-    fi
-    if [[ -z "$PUBLIC_KEY" ]]; then
-      PUBLIC_KEY="$(prompt "Paste SSH public key line" "")"
-    fi
-    [[ -n "$PUBLIC_KEY" ]] || die "public key required for mode 1"
-    ;;
-  2)
-    KEY_NAME="$(prompt "Existing EC2 key pair name" "")"
-    [[ -n "$KEY_NAME" ]] || die "key_name required for mode 2"
-    ;;
-  3)
-    echo "SSM-only selected."
-    ;;
-  *)
-    die "invalid access mode (use 1, 2, or 3)"
-    ;;
-esac
+DEFAULT_PUB=""
+for cand in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
+  if [[ -f "$cand" ]]; then DEFAULT_PUB="$cand"; break; fi
+done
 
-if [[ "$ACCESS" != "3" ]]; then
-  if prompt_yn "Also enable SSM Session Manager?" y; then
-    ENABLE_SSM="true"
-  else
-    ENABLE_SSM="false"
+if [[ -n "$DEFAULT_PUB" ]] && prompt_yn "Use public key from $DEFAULT_PUB for dronefeed SSH?" y; then
+  PUBLIC_KEY="$(tr -d '\n' <"$DEFAULT_PUB")"
+  SSH_PRIVATE_KEY_PATH="${DEFAULT_PUB%.pub}"
+elif prompt_yn "Generate a new ed25519 key under deploy/terraform/keys/?" y; then
+  mkdir -p "$KEYS_DIR"
+  if [[ ! -f "$GENERATED_KEY" ]]; then
+    ssh-keygen -t ed25519 -N "" -f "$GENERATED_KEY" -C "dronefeed-${NAME_PREFIX}" >/dev/null
+    chmod 600 "$GENERATED_KEY"
   fi
+  PUBLIC_KEY="$(tr -d '\n' <"${GENERATED_KEY}.pub")"
+  SSH_PRIVATE_KEY_PATH="$GENERATED_KEY"
+  echo "  Generated $GENERATED_KEY (gitignored)"
+else
+  PUBLIC_KEY="$(prompt "Paste SSH public key line" "")"
+  SSH_PRIVATE_KEY_PATH="$(prompt "Path to matching private key (for the summary SSH command)" "")"
+fi
+[[ -n "$PUBLIC_KEY" ]] || die "SSH public key is required so you can log in as dronefeed"
+
+if prompt_yn "Also enable SSM Session Manager (backup access)?" y; then
+  ENABLE_SSM="true"
+else
+  ENABLE_SSM="false"
 fi
 
 SSH_CIDR="$(prompt "SSH allow CIDR (port 22)" "0.0.0.0/0")"
 MEDIA_CIDR="$(prompt "Media/UI allow CIDR (80/443/RTMP/…)" "0.0.0.0/0")"
 
 echo
+echo "── Admin login (printed after apply) ──"
+ADMIN_EMAIL="$(prompt "Admin email" "admin@dronefeed.local")"
+DEFAULT_ADMIN_PW="$(gen_admin_password)"
+echo "Generated admin password: $DEFAULT_ADMIN_PW"
+if prompt_yn "Use this generated password?" y; then
+  ADMIN_PASSWORD="$DEFAULT_ADMIN_PW"
+else
+  ADMIN_PASSWORD="$(prompt_secret "Admin password (≥8 chars, include a digit and a symbol)")"
+fi
+[[ -n "$ADMIN_PASSWORD" ]] || die "admin password required"
+if [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+  die "admin password must be at least 8 characters"
+fi
+
+echo
 echo "── Repo bootstrap on the instance ──"
 GIT_REPO="$(prompt "Git clone URL" "https://github.com/tfeuerbach/dronefeed.git")"
-GIT_REF="$(prompt "Git branch or tag" "master")"
+GIT_REF="$(prompt "Git branch or tag (must include Caddyfile.http + runtime PHX_SCHEME/force_ssl)" "master")"
 DEPLOY_USER="$(prompt "Linux deploy user" "dronefeed")"
 
-ENABLE_SES="true"
-prompt_yn "Attach SES send policy to the instance role?" y || ENABLE_SES="false"
+echo
+echo "── Email / SES (optional) ──"
+ENABLE_SES="false"
+prompt_yn "Attach SES send policy / plan to use outbound email later?" n && ENABLE_SES="true"
+
 ASSOCIATE_EIP="true"
-prompt_yn "Allocate Elastic IP (recommended)?" y || ASSOCIATE_EIP="false"
+prompt_yn "Allocate Elastic IP (recommended for IP-first)?" y || ASSOCIATE_EIP="false"
 
 echo
 echo "── After-hours offline page (S3 + CloudFront) ──"
@@ -189,9 +210,7 @@ MAINT_SESSION_TOKEN=""
 if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
   ENABLE_MAINTENANCE="true"
   echo
-  echo "  The offline HTML lives in an S3 bucket. CloudFront (this account) serves it."
-  echo "  You can create a new bucket or point at an existing one (same or other account)."
-  echo
+  echo "  Offline HTML lives in S3; CloudFront (this account) serves it."
   if prompt_yn "Create a new S3 bucket for the offline page?" y; then
     MAINT_CREATE="true"
     MAINT_BUCKET="$(prompt "New bucket name (blank = ${NAME_PREFIX}-after-hours-<account_id>)" "")"
@@ -199,9 +218,7 @@ if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
     MAINT_CREATE="false"
     MAINT_BUCKET="$(prompt "Existing S3 bucket name" "")"
     [[ -n "$MAINT_BUCKET" ]] || die "existing bucket name is required"
-    echo
-    echo "  Note: Terraform will set this bucket's policy so CloudFront can read objects"
-    echo "  (replaces the bucket policy document)."
+    echo "  Note: Terraform will set this bucket's policy for CloudFront OAC (replaces bucket policy)."
   fi
 
   if prompt_yn "Is that bucket in the same AWS account as this EC2 stack?" y; then
@@ -209,8 +226,7 @@ if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
     MAINT_BUCKET_REGION="$(prompt "Bucket region (blank = same as EC2 region $AWS_REGION)" "")"
   else
     MAINT_SAME_ACCOUNT="false"
-    echo
-    echo "  Cross-account: enter credentials that can read/write that bucket and put bucket policy."
+    echo "  Cross-account: credentials that can read/write the bucket and put bucket policy."
     MAINT_BUCKET_REGION="$(prompt "Bucket AWS region" "$AWS_REGION")"
     [[ -n "$MAINT_BUCKET_REGION" ]] || die "bucket region is required for cross-account"
     MAINT_ACCESS_KEY="$(prompt "Bucket account AWS access key ID" "")"
@@ -225,15 +241,17 @@ fi
 
 echo
 echo "── Business hours (auto start/stop) ──"
-ENABLE_SCHEDULE="false"
+ENABLE_SCHEDULE="true"
 SCHEDULE_TZ="America/New_York"
 SCHEDULE_START=8
 SCHEDULE_STOP=18
-if prompt_yn "Auto start/stop EC2 on weekdays (saves money nights/weekends)?" y; then
+if prompt_yn "Auto start/stop EC2 on weekdays (default 8:00–18:00 local)?" y; then
   ENABLE_SCHEDULE="true"
   SCHEDULE_TZ="$(prompt "Timezone (IANA)" "America/New_York")"
   SCHEDULE_START="$(prompt "Start hour Mon–Fri (0–23, local)" "8")"
   SCHEDULE_STOP="$(prompt "Stop hour Mon–Fri (0–23, local)" "18")"
+else
+  ENABLE_SCHEDULE="false"
 fi
 
 if [[ -f "$TFVARS" ]]; then
@@ -258,9 +276,8 @@ fi
   echo "ssh_ingress_cidrs   = $(hcl_list "$SSH_CIDR")"
   echo "media_ingress_cidrs = $(hcl_list "$MEDIA_CIDR")"
   echo
-  if [[ -n "$PUBLIC_KEY" ]]; then
-    echo "public_key = $(hcl_str "$PUBLIC_KEY")"
-  fi
+  echo "public_key         = $(hcl_str "$PUBLIC_KEY")"
+  echo "ssh_authorized_key = $(hcl_str "$PUBLIC_KEY")"
   if [[ -n "$KEY_NAME" ]]; then
     echo "key_name = $(hcl_str "$KEY_NAME")"
   fi
@@ -268,6 +285,8 @@ fi
   echo "git_repo_url = $(hcl_str "$GIT_REPO")"
   echo "git_ref      = $(hcl_str "$GIT_REF")"
   echo "deploy_user  = $(hcl_str "$DEPLOY_USER")"
+  echo
+  echo "admin_email = $(hcl_str "$ADMIN_EMAIL")"
   echo
   echo "enable_ssm                 = $ENABLE_SSM"
   echo "enable_ses_send            = $ENABLE_SES"
@@ -313,35 +332,32 @@ fi
   echo "}"
 } >"$TFVARS"
 
-# Cross-account keys go in secrets.auto.tfvars (gitignored via *.auto.tfvars).
-if [[ "$ENABLE_MAINTENANCE" == true && "$MAINT_SAME_ACCOUNT" == false ]]; then
-  {
-    echo "# Generated by setup.sh — cross-account offline-page bucket credentials"
-    echo "# Do not commit. Loaded automatically by Terraform (*.auto.tfvars)."
+{
+  echo "# Generated by setup.sh — secrets (gitignored via *.auto.tfvars)"
+  echo "admin_password = $(hcl_str "$ADMIN_PASSWORD")"
+  if [[ "$ENABLE_MAINTENANCE" == true && "$MAINT_SAME_ACCOUNT" == false ]]; then
     echo "maintenance_bucket_access_key    = $(hcl_str "$MAINT_ACCESS_KEY")"
     echo "maintenance_bucket_secret_key    = $(hcl_str "$MAINT_SECRET_KEY")"
     if [[ -n "$MAINT_SESSION_TOKEN" ]]; then
       echo "maintenance_bucket_session_token = $(hcl_str "$MAINT_SESSION_TOKEN")"
     fi
-  } >"$SECRETS_TFVARS"
-  chmod 600 "$SECRETS_TFVARS"
-  echo "Wrote $SECRETS_TFVARS (credentials; gitignored)"
-elif [[ -f "$SECRETS_TFVARS" ]]; then
-  # Drop stale cross-account secrets when switching back to same-account / disabled.
-  rm -f "$SECRETS_TFVARS"
-  echo "Removed stale $SECRETS_TFVARS"
-fi
+  fi
+} >"$SECRETS_TFVARS"
+chmod 600 "$SECRETS_TFVARS"
 
 echo
 echo "Wrote $TFVARS"
+echo "Wrote $SECRETS_TFVARS (secrets; gitignored)"
 echo
 echo "── Summary ──"
 echo "  Project=$PROJECT  Environment=$ENVIRONMENT  name_prefix=$NAME_PREFIX"
 echo "  region=$AWS_REGION  instance=$INSTANCE_TYPE"
+echo "  admin_email=$ADMIN_EMAIL"
+echo "  SES/email: $ENABLE_SES"
 if [[ "$ENABLE_SCHEDULE" == true ]]; then
   echo "  schedule: Mon–Fri ${SCHEDULE_START}:00→${SCHEDULE_STOP}:00 $SCHEDULE_TZ"
 else
-  echo "  schedule: disabled (24/7 until you stop manually)"
+  echo "  schedule: disabled"
 fi
 if [[ "$ENABLE_MAINTENANCE" == true ]]; then
   if [[ "$MAINT_CREATE" == true ]]; then
@@ -349,18 +365,9 @@ if [[ "$ENABLE_MAINTENANCE" == true ]]; then
   else
     echo "  after-hours: existing bucket $MAINT_BUCKET + CloudFront"
   fi
-  if [[ "$MAINT_SAME_ACCOUNT" == true ]]; then
-    echo "  after-hours account: same as EC2"
-  else
-    echo "  after-hours account: cross-account (keys in secrets.auto.tfvars)"
-  fi
-  if [[ -n "$MAINT_BUCKET_REGION" ]]; then
-    echo "  after-hours bucket region: $MAINT_BUCKET_REGION"
-  fi
 else
   echo "  after-hours: disabled"
 fi
-echo "  tags include ManagedBy=terraform (provider default) + your tags above"
 echo
 
 if ! prompt_yn "Run terraform init?" y; then
@@ -385,9 +392,22 @@ if prompt_yn "Run terraform apply now?" n; then
   echo "── Outputs ──"
   terraform output
   echo
-  echo "Open $(terraform output -raw app_url) in a browser (plain HTTP)."
-  echo "Wait a few minutes for the first Docker build, then log in with:"
-  echo "  cat /opt/drone-feed/DEPLOY.txt   # via SSH/SSM"
+  APP_URL="$(terraform output -raw app_url 2>/dev/null || true)"
+  PUBLIC_IP="$(terraform output -raw public_ip 2>/dev/null || true)"
+  echo "════════════════════════════════════════"
+  echo "  App URL:   ${APP_URL:-http://$PUBLIC_IP}"
+  echo "  Public IP: $PUBLIC_IP"
+  echo "  Admin:     $ADMIN_EMAIL"
+  echo "  Password:  $ADMIN_PASSWORD"
+  if [[ -n "$SSH_PRIVATE_KEY_PATH" ]]; then
+    echo "  SSH:       ssh -i $SSH_PRIVATE_KEY_PATH $DEPLOY_USER@$PUBLIC_IP"
+  else
+    echo "  SSH:       ssh -i <private-key> $DEPLOY_USER@$PUBLIC_IP"
+  fi
+  echo "════════════════════════════════════════"
+  echo "Wait a few minutes for the first Docker build, then open the App URL."
+  echo "After-hours test window: ./wake.sh 4|8|12|24"
+  echo
 
   MAINT_URL="$(terraform output -raw maintenance_url 2>/dev/null || true)"
   if [[ -n "$MAINT_URL" && "$MAINT_URL" != "null" ]]; then
@@ -400,10 +420,9 @@ DIST_ID=$(terraform output -raw maintenance_distribution_id)
 CLOUDFRONT_DOMAIN=$(terraform output -raw maintenance_cloudfront_domain)
 MAINTENANCE_URL=$MAINT_URL
 EOF
-    echo
-    echo "After-hours page: $MAINT_URL"
+    echo "Offline page: $MAINT_URL"
     echo "Wrote $GEN_DIR/aws.env for deploy/maintenance/sync.sh"
-    echo "Cloudflare Worker still needed for domain failover — see deploy/maintenance/README.md"
+    echo "Hostname failover (Cloudflare / Route 53): see README Path 1 / Path 2"
   fi
 else
   echo
@@ -412,4 +431,6 @@ else
   if [[ -f tfplan ]]; then
     echo "  # or: terraform apply tfplan"
   fi
+  echo
+  echo "Admin (saved in secrets.auto.tfvars): $ADMIN_EMAIL / (see secrets file)"
 fi

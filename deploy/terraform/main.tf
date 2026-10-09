@@ -20,8 +20,22 @@ locals {
 
 check "access_path" {
   assert {
-    condition     = var.public_key != "" || var.key_name != "" || var.enable_ssm
-    error_message = "Provide public_key, key_name, or enable_ssm=true so you can reach the instance."
+    condition     = var.public_key != "" || var.key_name != ""
+    error_message = "Provide public_key (recommended) or key_name so you can SSH as the deploy user."
+  }
+}
+
+check "admin_password" {
+  assert {
+    condition     = var.admin_password != ""
+    error_message = "Set admin_password (setup.sh writes it to secrets.auto.tfvars)."
+  }
+}
+
+check "ssh_authorized_key" {
+  assert {
+    condition     = var.ssh_authorized_key != "" || var.public_key != ""
+    error_message = "Set ssh_authorized_key or public_key so user-data can install authorized_keys for deploy_user."
   }
 }
 
@@ -295,10 +309,13 @@ resource "aws_instance" "app" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    git_repo_url = var.git_repo_url
-    git_ref      = var.git_ref
-    deploy_user  = var.deploy_user
-    name_prefix  = var.name_prefix
+    git_repo_url           = var.git_repo_url
+    git_ref                = var.git_ref
+    deploy_user            = var.deploy_user
+    name_prefix            = var.name_prefix
+    ssh_authorized_key_b64 = base64encode(var.ssh_authorized_key != "" ? var.ssh_authorized_key : var.public_key)
+    admin_email_b64        = base64encode(var.admin_email)
+    admin_password_b64     = base64encode(var.admin_password)
   })
 
   metadata_options {

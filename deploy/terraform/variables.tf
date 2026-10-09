@@ -74,7 +74,7 @@ variable "git_repo_url" {
 }
 
 variable "git_ref" {
-  description = "Git branch or tag to check out on first boot."
+  description = "Git branch or tag checked out on first boot. Must include deploy/Caddyfile.http and runtime PHX_SCHEME/force_ssl (force_ssl only when https)."
   type        = string
   default     = "master"
 }
@@ -92,9 +92,28 @@ variable "enable_ssm" {
 }
 
 variable "enable_ses_send" {
-  description = "Attach a minimal SES send policy (for SMTP/API mail from the instance role)."
+  description = "Attach a minimal SES send policy (for SMTP/API mail from the instance role). Off by default — no email required for IP-first deploys."
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "admin_email" {
+  description = "Bootstrap admin email written into deploy/.env on first boot."
+  type        = string
+  default     = "admin@dronefeed.local"
+}
+
+variable "admin_password" {
+  description = "Bootstrap admin password (≥8 chars, digit + symbol). Prefer secrets.auto.tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ssh_authorized_key" {
+  description = "SSH public key installed for deploy_user (dronefeed). Usually same as public_key."
+  type        = string
+  default     = ""
 }
 
 variable "associate_elastic_ip" {
@@ -155,9 +174,9 @@ variable "maintenance_bucket_session_token" {
 }
 
 variable "enable_business_hours_schedule" {
-  description = "Auto start/stop the EC2 instance on weekdays via EventBridge Scheduler."
+  description = "Auto start/stop the EC2 instance on weekdays via EventBridge Scheduler (default on: 8→18 local)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "schedule_timezone" {

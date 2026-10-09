@@ -33,24 +33,61 @@ output "app_url" {
   value       = "http://${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}"
 }
 
+output "admin_email" {
+  description = "Bootstrap admin email (password is in secrets.auto.tfvars / setup.sh output only)."
+  value       = var.admin_email
+}
+
+output "deploy_user" {
+  description = "Linux user for SSH / compose."
+  value       = var.deploy_user
+}
+
+output "name_prefix" {
+  description = "Resource name prefix (used by wake.sh schedule names)."
+  value       = var.name_prefix
+}
+
+output "aws_region" {
+  description = "AWS region for this stack."
+  value       = var.aws_region
+}
+
 output "ssh_hint" {
-  description = "Example SSH command (replace key path / user as needed)."
-  value       = "ssh -i <key.pem> ${var.deploy_user}@${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}"
+  description = "Example SSH command (replace -i path with your private key)."
+  value       = "ssh -i <private-key> ${var.deploy_user}@${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}"
+}
+
+output "scheduler_role_arn" {
+  description = "EventBridge Scheduler role ARN (null if weekday schedule disabled)."
+  value       = var.enable_business_hours_schedule ? aws_iam_role.scheduler[0].arn : null
+}
+
+output "schedule_start_name" {
+  description = "Weekday start schedule name (null if disabled)."
+  value       = var.enable_business_hours_schedule ? aws_scheduler_schedule.ec2_start[0].name : null
+}
+
+output "schedule_stop_name" {
+  description = "Weekday stop schedule name (null if disabled)."
+  value       = var.enable_business_hours_schedule ? aws_scheduler_schedule.ec2_stop[0].name : null
 }
 
 output "next_steps" {
   description = "Post-apply checklist (IP-first HTTP; domain/DNS optional later)."
   value       = <<-EOT
     Public IP: ${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
+    App URL:   http://${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
+    Admin:     ${var.admin_email}
+    SSH:       ssh -i <private-key> ${var.deploy_user}@${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
 
     1. Wait a few minutes for first-boot Docker build (cloud-init + compose).
-    2. Open http://<public_ip> in a browser (plain HTTP — not HTTPS).
-    3. Log in with credentials from /opt/drone-feed/DEPLOY.txt on the instance
-       (SSH/SSM: cat /opt/drone-feed/DEPLOY.txt).
+    2. Open the App URL (plain HTTP — not HTTPS) and log in with the admin password from setup.sh.
+    3. After-hours test window: ./wake.sh 4|8|12|24
 
-    Optional later: point a domain A record at the Elastic IP, set PHX_HOST/MEDIA_HOST,
-    CADDYFILE=Caddyfile, PHX_SCHEME=https, ACME_EMAIL=you@example.com, then recreate caddy.
-    ${var.enable_maintenance_static ? "\nAfter-hours page: ${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html\n  (Terraform wrote deploy/maintenance/generated/aws.env when using setup.sh — or copy terraform outputs.)\n  Cloudflare Worker still needed for failover; see deploy/maintenance/README.md." : ""}
+    Optional later (other account DNS): A record → EIP, then on-box Caddy HTTPS.
+    Hostname offline failover: Path 1 Cloudflare or Path 2 Route 53 in README.
+    ${var.enable_maintenance_static ? "\nOffline page preview: https://${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html" : ""}
     ${var.enable_business_hours_schedule ? "\nBusiness hours: auto-start ${var.schedule_start_hour}:00 / stop ${var.schedule_stop_hour}:00 ${var.schedule_timezone} Mon–Fri." : ""}
   EOT
 }
@@ -58,11 +95,12 @@ output "next_steps" {
 output "business_hours_schedule" {
   description = "Weekday auto start/stop summary (null if disabled)."
   value = var.enable_business_hours_schedule ? {
-    timezone   = var.schedule_timezone
-    start_cron = "Mon–Fri ${var.schedule_start_hour}:00"
-    stop_cron  = "Mon–Fri ${var.schedule_stop_hour}:00"
-    start_name = aws_scheduler_schedule.ec2_start[0].name
-    stop_name  = aws_scheduler_schedule.ec2_stop[0].name
+    timezone           = var.schedule_timezone
+    start_cron         = "Mon–Fri ${var.schedule_start_hour}:00"
+    stop_cron          = "Mon–Fri ${var.schedule_stop_hour}:00"
+    start_name         = aws_scheduler_schedule.ec2_start[0].name
+    stop_name          = aws_scheduler_schedule.ec2_stop[0].name
+    scheduler_role_arn = aws_iam_role.scheduler[0].arn
   } : null
 }
 

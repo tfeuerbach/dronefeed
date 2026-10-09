@@ -2,7 +2,6 @@
 set -euxo pipefail
 
 # DroneFeed host bootstrap — Amazon Linux 2023
-# Mirrors production: Docker Compose stack under /opt/drone-feed, large UDP buffers.
 # IP-first: stamps plain HTTP .env from IMDS public IP and starts Compose once.
 
 DEPLOY_USER="${deploy_user}"
@@ -12,6 +11,11 @@ INSTALL_ROOT="/opt/drone-feed"
 DEPLOY_DIR="$INSTALL_ROOT/deploy"
 CREDENTIALS_FILE="$INSTALL_ROOT/DEPLOY.txt"
 BOOTSTRAP_MARKER="$INSTALL_ROOT/.bootstrap-complete"
+
+# Terraform-supplied secrets (base64 to avoid shell metacharacter issues).
+SSH_AUTHORIZED_KEY="$(printf '%s' '${ssh_authorized_key_b64}' | base64 -d)"
+ADMIN_EMAIL="$(printf '%s' '${admin_email_b64}' | base64 -d)"
+ADMIN_PASSWORD="$(printf '%s' '${admin_password_b64}' | base64 -d)"
 
 dnf -y update
 dnf -y install docker git openssl python3
@@ -38,6 +42,12 @@ sysctl --system || sysctl -p /etc/sysctl.d/99-dronefeed-udp.conf
 id -u "$DEPLOY_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$DEPLOY_USER"
 usermod -aG docker "$DEPLOY_USER"
 usermod -aG wheel "$DEPLOY_USER" || true
+
+# SSH access for deploy_user (same key as the EC2 key pair).
+install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
+printf '%s\n' "$SSH_AUTHORIZED_KEY" >"/home/$DEPLOY_USER/.ssh/authorized_keys"
+chown "$DEPLOY_USER:$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh/authorized_keys"
+chmod 600 "/home/$DEPLOY_USER/.ssh/authorized_keys"
 
 # Clone into a temp dir then move — avoids "destination path already exists" failures.
 TMP_CLONE="$(mktemp -d /tmp/dronefeed-clone.XXXXXX)"
@@ -75,8 +85,6 @@ elif [[ -f "$BOOTSTRAP_MARKER" ]]; then
 else
   SECRET_KEY_BASE="$(openssl rand -base64 48 | tr -d '\n')"
   POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -d '\n=/+' | cut -c1-24)"
-  ADMIN_PASSWORD="$(openssl rand -base64 18 | tr -d '\n=/+' | cut -c1-16)"
-  ADMIN_EMAIL="admin@$PUBLIC_IP.nip.io"
 
   export DEPLOY_DIR PUBLIC_IP SECRET_KEY_BASE POSTGRES_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD
 
@@ -99,6 +107,9 @@ replacements = {
     "POSTGRES_PASSWORD": os.environ["POSTGRES_PASSWORD"],
     "ADMIN_EMAIL": os.environ["ADMIN_EMAIL"],
     "ADMIN_PASSWORD": os.environ["ADMIN_PASSWORD"],
+    "SMTP_HOST": "",
+    "SMTP_USER": "",
+    "SMTP_PASSWORD": "",
 }
 text = path.read_text()
 lines = []
@@ -129,6 +140,7 @@ URL:      http://$PUBLIC_IP
 Email:    $ADMIN_EMAIL
 Password: $ADMIN_PASSWORD
 
+SSH:      ssh ${deploy_user}@$PUBLIC_IP
 Change the admin password after first login.
 This file is only on the instance: $CREDENTIALS_FILE
 CREDS
@@ -148,9 +160,10 @@ cat >/etc/motd <<MOTD
 DroneFeed host (${name_prefix})
 Repo: $INSTALL_ROOT
 
-Open http://$PUBLIC_IP in a browser (plain HTTP, no TLS).
+Open http://$${PUBLIC_IP:-(EIP)} in a browser (plain HTTP, no TLS).
 Admin credentials: $CREDENTIALS_FILE
 Compose log:       $INSTALL_ROOT/compose-bootstrap.log
+SSH:               ssh $DEPLOY_USER@<EIP>
 
 Optional later: point a domain A record at the Elastic IP, set
   PHX_HOST / MEDIA_HOST / CADDYFILE=Caddyfile / PHX_SCHEME=https / ACME_EMAIL
