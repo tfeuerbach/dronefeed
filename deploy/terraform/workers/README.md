@@ -1,12 +1,11 @@
-# Edge workers (post-apply, not managed by Terraform)
+# Edge workers (not managed by Terraform)
 
-| File | Use with |
-|------|----------|
-| [`cloudflare-worker.js`](./cloudflare-worker.js) | [Path 1 — Cloudflare](../README.md#path-1--cloudflare) |
-| [`lambda-edge-viewer-request.js`](./lambda-edge-viewer-request.js) | [Path 2 — Route 53](../README.md#path-2--route-53) |
+| File | Path |
+|------|------|
+| [`cloudflare-worker.js`](./cloudflare-worker.js) | [README Path 1](../README.md#path-1--cloudflare) |
+| [`lambda-edge-viewer-request.js`](./lambda-edge-viewer-request.js) | [README Path 2](../README.md#path-2--route-53-other-aws-account) |
 
-Both serve `maintenance_url` (S3 via CloudFront) when EC2 is down. DNS still
-resolves to the EIP/CloudFront — the worker returns the offline HTML; it does
-not repoint DNS at the bucket.
+Serve `maintenance_url` when EC2 is down. DNS stays on the EIP (Cloudflare) or
+the UI CloudFront (Route 53) — workers do not point DNS at S3.
 
-Terraform seeds the offline objects; `./setup.sh` writes `deploy/maintenance/generated/aws.env`.
+After apply, `./setup.sh` may write `deploy/maintenance/generated/aws.env`.

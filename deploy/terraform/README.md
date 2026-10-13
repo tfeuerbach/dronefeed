@@ -1,71 +1,70 @@
 # DroneFeed AWS Terraform
 
-Provisions an IP-first DroneFeed host: VPC, EC2 (`c7i.2xlarge`), Elastic IP,
-Docker Compose on plain HTTP, weekday power schedule (Mon–Fri 8:00–18:00 local),
-and an S3 + CloudFront offline page. No Route 53, ACM, or domain is created.
+IP-first host: VPC, EC2, Elastic IP, Docker Compose on plain HTTP, weekday
+power schedule (Mon–Fri 8:00–18:00 local), and an S3 + CloudFront offline page.
+No Route 53, ACM, or domain is created here.
 
 | | |
 |--|--|
 | App URL | `http://<elastic-ip>` |
 | SSH | `dronefeed` + key from setup |
 | Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12\|24` |
-| Offline page | CloudFront URL in terraform outputs |
+| Offline page | `terraform output -raw maintenance_url` |
 | Email | Off by default |
 
 ## Prerequisites
 
-1. AWS credentials for the target account only:
+1. AWS credentials for the target account:
 
    ```bash
-   export AWS_PROFILE=<profile>
+   export AWS_PROFILE=<profile>   # if you use profiles
    aws sts get-caller-identity
    ```
 
-2. Tools: `terraform`, `aws`, `openssl`, `ssh-keygen`.
+2. Tools: `terraform`, `aws`, `openssl`, `ssh-keygen`, `python3` (live instance
+   prices in `./setup.sh`; falls back to a static table without it).
 
-3. Push the git ref the instance will clone (`master` by default). Local-only
-   changes are not used on first boot. The ref must include:
-
-   - `deploy/Caddyfile.http`
-   - runtime `PHX_SCHEME` / `force_ssl` (`force_ssl` only when `PHX_SCHEME=https`)
+3. Push the git ref the instance will clone (`master` by default). First boot
+   clones that ref — local-only changes are ignored. The ref needs
+   `deploy/Caddyfile.http` and runtime `PHX_SCHEME` / `force_ssl` (HTTP mode
+   must not force HTTPS at compile time).
 
 ## Setup
 
 ```bash
 cd deploy/terraform
-./setup.sh
+./setup.sh              # menu: guided or smoke
+./setup.sh --smoke      # cheapest c7i + 40 GiB — Terraform check only, no video
+./setup.sh --smoke -y   # smoke + init/plan/apply with no prompts
 ```
 
-The wizard writes `terraform.tfvars` and `secrets.auto.tfvars`, provisions an
-SSH key (your `~/.ssh/*.pub` or a new key under `keys/`), asks about the
-offline-page bucket, then optionally runs plan/apply.
+Smoke uses `name_prefix=dronefeed-smoke`. Destroy when done: `terraform destroy`.
 
-Defaults you can accept: weekday schedule on, Elastic IP on, SES/email off,
-maintenance page on (new bucket, same account).
+Guided flow: tags → workload sizing → SSH → admin → repo → email/EIP → offline
+page → schedule → init/plan/apply. Instance type and disk you pick are what
+apply creates. `./setup.sh` loads live `c7i` types and on-demand/gp3 prices for
+the region (Pricing API); estimates only — egress not included.
 
-When apply finishes it prints:
+Writes gitignored `terraform.tfvars` + `secrets.auto.tfvars`, and an SSH key
+(`~/.ssh/*.pub` or `keys/`). Defaults: schedule on, EIP on, SES off, maintenance
+page on (new bucket, same account).
 
-```text
-App URL:   http://x.x.x.x
-Admin:     …
-Password:  …
-SSH:       ssh -i … dronefeed@x.x.x.x
-```
-
-Credentials are also in `secrets.auto.tfvars` (gitignored) and on the host at
-`/opt/drone-feed/DEPLOY.txt`.
+Apply prints operator login plus a copy-pastable **network handoff** block
+(public IP, HTTP origin, media ports, offline CloudFront URL) and writes
+gitignored `handoff.txt` / `handoff.env`. Admin credentials also live in
+`secrets.auto.tfvars` and `/opt/drone-feed/DEPLOY.txt` on the host.
 
 ## After apply
 
-1. Wait for the first Docker build (several minutes). Progress on the host:
+1. Wait for the first Docker build:
 
    ```bash
    ssh -i <key> dronefeed@<eip> 'tail -f /opt/drone-feed/compose-bootstrap.log'
    ```
 
-2. Open `http://<eip>` and sign in with the admin credentials from setup.
+2. Open `http://<eip>` and sign in with the setup admin.
 
-3. Offline page (EC2 stopped does not change DNS; this URL is always available):
+3. Offline page URL (always up; stopping EC2 does not change DNS):
 
    ```bash
    terraform output -raw maintenance_url
@@ -73,7 +72,7 @@ Credentials are also in `secrets.auto.tfvars` (gitignored) and on the host at
 
 ## After-hours wake
 
-Weekday schedules stay enabled. To run the box outside 8–18:
+Weekday schedules stay enabled:
 
 ```bash
 ./wake.sh 4          # or 8, 12, 24
@@ -81,27 +80,40 @@ Weekday schedules stay enabled. To run the box outside 8–18:
 ./wake.sh --restore-schedule
 ```
 
-`wake.sh` starts the instance and sets a one-shot stop. It only briefly pauses
-the weekday stop schedule if that stop would cut the wake window short.
+Starts the instance, sets a one-shot stop, and only briefly pauses the weekday
+stop if that stop would cut the wake window short.
 
 ## Domain and HTTPS (optional, often another account)
 
-Not required for IP-first. Collect:
+Not needed for IP-first. For `https://dronefeed.example.com`, configure DNS in
+the account that owns the hosted zone.
+
+### How offline works
+
+Stopping EC2 does not change DNS. Do not point DNS at the S3 bucket. The offline
+HTML is on CloudFront (`maintenance_url`). Failover is at the edge (Cloudflare
+Worker or Lambda@Edge): try the live app; if EC2 is down, return that HTML.
+
+Media (SRT/RTSP/RTMP) must use the Elastic IP or a DNS-only hostname — not a
+proxied Cloudflare / UI-CloudFront hostname (HTTP(S) only).
+
+### Handoff (EC2 account → DNS admin)
 
 ```bash
+cd deploy/terraform
 terraform output -raw public_ip
 terraform output -raw maintenance_url
 ```
 
-Media ports (SRT/RTSP/RTMP) must use the EIP or a DNS-only hostname, not a
-proxied Cloudflare hostname.
+Also give them the hostname (e.g. `dronefeed.ecsdevlabs.com`).
 
-On the instance after DNS exists:
+### On the EC2 box after the hostname works
 
 ```bash
 # /opt/drone-feed/deploy/.env
 PHX_HOST=dronefeed.example.com
 MEDIA_IP=<EIP>
+MEDIA_HOST=media.dronefeed.example.com   # optional DNS-only → EIP
 PHX_SCHEME=https
 CADDYFILE=Caddyfile
 ACME_EMAIL=you@example.com
@@ -116,21 +128,28 @@ ACME_EMAIL=you@example.com
 | A (optional) | `media` | `<EIP>` | DNS only |
 
 1. Create a Worker; paste [`workers/cloudflare-worker.js`](./workers/cloudflare-worker.js).
-2. Set variable `MAINTENANCE_URL` to `terraform output -raw maintenance_url`.
+2. Variable `MAINTENANCE_URL` = `maintenance_url` from Terraform.
 3. Route: `feeds.example.com/*`.
 
-### Path 2 — Route 53
+### Path 2 — Route 53 (other AWS account)
 
-1. ACM in `us-east-1`: cert for the hostname; validate in Route 53; wait until Issued.
-2. Lambda@Edge (Node 18, `us-east-1`): paste
+In the DNS account:
+
+1. **ACM** in `us-east-1`: cert for the hostname; validate in Route 53; wait until Issued.
+2. **Lambda@Edge** (Node 18, `us-east-1`): paste
    [`workers/lambda-edge-viewer-request.js`](./workers/lambda-edge-viewer-request.js);
-   set `ORIGIN_BASE=http://<EIP>` and `MAINTENANCE_URL=<maintenance_url>`; publish a version.
-3. CloudFront (new distribution, not the Terraform maintenance one): origin EIP:80;
-   caching disabled; viewer-request Lambda@Edge; alternate domain + ACM cert.
-4. DNS: Alias A/AAAA for the hostname to that CloudFront; optional `media` A to EIP.
+   set `ORIGIN_BASE=http://<public_ip>` and `MAINTENANCE_URL=<maintenance_url>`;
+   publish a version (not `$LATEST`).
+3. **CloudFront** (new UI distribution — not the Terraform maintenance one): origin
+   EIP:80; caching off; viewer-request → that Lambda version; alternate domain + ACM cert.
+4. **Route 53**: Alias A/AAAA hostname → that CloudFront; optional `media` A → EIP.
+5. Check: instance up → app; instance stopped → offline HTML; `maintenance_url` still works.
+6. Switch the box to HTTPS (`.env` above) once DNS resolves.
 
-For locked-down EC2 accounts: run only `./setup.sh` here. Hand the EIP and
-`maintenance_url` to the DNS account when ready.
+Route 53 health-check failover to S3 is a worse fit here (certs + media still on
+the EIP). Edge failover matches the private S3 + CloudFront OAC offline page.
+
+Workers: [`workers/README.md`](./workers/README.md).
 
 ## Schedule and sizing
 
@@ -141,19 +160,25 @@ schedule_start_hour            = 8
 schedule_stop_hour             = 18
 ```
 
-- Up to about 4 public feeds at 720p: `c7i.2xlarge` (default)
-- More feeds or several at 1080p: `c7i.4xlarge`
+| Workload | Instance |
+|----------|----------|
+| Smoke / idle only | `c7i.large` |
+| 1–2 feeds @720p | `c7i.xlarge` |
+| ≤4 @720p (typical) | `c7i.2xlarge` |
+| More feeds or several @1080p | `c7i.4xlarge`+ |
+
+Disk: 80–200+ GiB gp3 from retention (wizard estimates from feeds × hours × days).
 
 ## Not included
 
-- Domains / Route 53 / ACM (Path 1 or Path 2 above, after DNS exists)
+- Domains / Route 53 / ACM (Path 1 or 2 above)
 - SES identity verification
-- Remote Terraform state (keep local `terraform.tfstate` safe)
+- Remote Terraform state (keep `terraform.tfstate` safe)
 
 ## Constraints
 
-- `git_ref` must be pushed before apply (see Prerequisites).
-- Clone URL must be reachable from the instance (public HTTPS unless you add auth).
+- `git_ref` must be pushed before apply.
+- Clone URL must be reachable from the instance.
 - `c7i.*` may be missing in some AZs.
 - First `compose up --build` can take several minutes.
 
@@ -164,5 +189,5 @@ cd deploy/terraform
 terraform destroy
 ```
 
-Removes EC2 and the maintenance S3/CloudFront stack. Delete any manual
+Removes EC2 and the maintenance S3/CloudFront stack. Delete any manual UI
 CloudFront / Lambda@Edge / DNS records yourself.

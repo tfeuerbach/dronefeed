@@ -1,29 +1,17 @@
 /**
- * DroneFeed after-hours failover — Lambda@Edge (viewer-request)
+ * Lambda@Edge viewer-request: serve maintenance_url when EC2 is unreachable.
  *
- * AWS equivalent of workers/cloudflare-worker.js.
- * Deploy to us-east-1, then associate with a CloudFront distribution that sits
- * in front of the EC2 Elastic IP (viewer-request trigger).
- *
- * Before deploy, set the two constants below from terraform outputs:
- *   ORIGIN_BASE     = http://<public_ip>     (or https://… once the app has TLS)
- *   MAINTENANCE_URL = terraform output -raw maintenance_url
- *
- * Prefer CloudFront **origin group failover** (no Lambda) when you can —
- * see deploy/terraform/README.md § "Option B — Route 53 + AWS".
- * Use this Lambda when you want the same short-timeout behavior as Cloudflare.
- *
- * Package: zip this file as index.js (Node.js 18.x), publish a numbered version,
- * then attach that version to the distribution (Lambda@Edge requires published versions).
+ * us-east-1, Node 18. Zip as index.js, publish a version, attach to the UI
+ * CloudFront in front of the EIP. Set ORIGIN_BASE + MAINTENANCE_URL below from
+ * terraform outputs. Full steps: deploy/terraform/README.md (Path 2).
  */
 
 "use strict";
 
-// --- edit these after terraform apply ---
-const ORIGIN_BASE = "http://203.0.113.10"; // Elastic IP from: terraform output -raw public_ip
-const MAINTENANCE_URL = "https://dxxxx.cloudfront.net/index.html"; // terraform output -raw maintenance_url
+// From: terraform output -raw public_ip / maintenance_url
+const ORIGIN_BASE = "http://203.0.113.10";
+const MAINTENANCE_URL = "https://dxxxx.cloudfront.net/index.html";
 const ORIGIN_TIMEOUT_MS = 2500;
-// ---------------------------------------
 
 exports.handler = async (event) => {
   const request = event.Records[0].cf.request;

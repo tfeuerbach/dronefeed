@@ -11,7 +11,11 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 terraform.tfvars
+terraform.tfvars.bak.*
+*.tfvars.bak.*
 *.auto.tfvars
 !terraform.tfvars.example
 keys/
+handoff.env
+handoff.txt
 # Keep .terraform.lock.hcl in git for reproducible provider versions.

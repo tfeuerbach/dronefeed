@@ -1,18 +1,8 @@
 /**
- * DroneFeed after-hours failover — Cloudflare Worker
+ * Cloudflare Worker: serve MAINTENANCE_URL when the EIP origin is down.
  *
- * Paste into Cloudflare → Workers → Create → Quick edit.
- * Attach a route: feeds.example.com/*
- *
- * Worker → Settings → Variables:
- *   MAINTENANCE_URL = https://<maintenance_cloudfront_domain>/index.html
- *   (from: terraform output -raw maintenance_url)
- *
- * DNS (must be Proxied / orange cloud or this Worker never runs):
- *   Type  Name    Content              Proxy
- *   A     feeds   <Elastic IP>         Proxied
- *
- * See deploy/terraform/README.md § "Subdomain + offline failover".
+ * Proxied A → EIP; Worker var MAINTENANCE_URL = terraform output -raw maintenance_url;
+ * route feeds.example.com/*. Steps: deploy/terraform/README.md (Path 1).
  */
 
 const ORIGIN_TIMEOUT_MS = 2500;
