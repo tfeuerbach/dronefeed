@@ -7,7 +7,7 @@ No Route 53, ACM, or domain is created here.
 | | |
 |--|--|
 | App URL | `http://<elastic-ip>` |
-| SSH | `dronefeed` + key from setup |
+| SSH | `dronefeed` + key from setup (passwordless sudo) |
 | Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12` (max 12h) |
 | Offline page | `terraform output -raw maintenance_url` |
 | Email | Off by default |

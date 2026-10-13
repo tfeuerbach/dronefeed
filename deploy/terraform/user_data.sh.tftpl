@@ -74,6 +74,14 @@ id -u "$DEPLOY_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$DEPLOY_USER"
 usermod -aG docker "$DEPLOY_USER"
 usermod -aG wheel "$DEPLOY_USER" || true
 
+# Key-only SSH + passwordless sudo (no Linux password is set for deploy_user).
+cat >"/etc/sudoers.d/90-${DEPLOY_USER}" <<SUDOERS
+# Managed by DroneFeed cloud-init — deploy operator may sudo without a password.
+${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL
+SUDOERS
+chmod 440 "/etc/sudoers.d/90-${DEPLOY_USER}"
+visudo -cf "/etc/sudoers.d/90-${DEPLOY_USER}"
+
 # SSH access for deploy_user (same key as the EC2 key pair).
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/$DEPLOY_USER/.ssh"
 printf '%s\n' "$SSH_AUTHORIZED_KEY" >"/home/$DEPLOY_USER/.ssh/authorized_keys"
