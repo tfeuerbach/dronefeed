@@ -2,13 +2,15 @@
 # Interactive DroneFeed AWS spin-up wizard (TUI).
 # Writes terraform.tfvars + secrets.auto.tfvars, provisions SSH key, then optional apply.
 #
-#   ./setup.sh              # guided or smoke (menu)
-#   ./setup.sh --smoke      # minimum-spec Terraform smoke test (non-interactive defaults)
-#   ./setup.sh --smoke -y   # smoke + auto init/plan/apply
+#   ./setup.sh                           # guided or smoke (menu)
+#   ./setup.sh --smoke / -s              # minimum-spec Terraform smoke test
+#   ./setup.sh -s -p spectre -y          # smoke + profile + skip init/plan/apply prompts
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
+# shellcheck source=aws_profile.inc.sh
+source "$ROOT/aws_profile.inc.sh"
 
 TFVARS="$ROOT/terraform.tfvars"
 SECRETS_TFVARS="$ROOT/secrets.auto.tfvars"
@@ -17,6 +19,7 @@ GENERATED_KEY="$KEYS_DIR/dronefeed_ed25519"
 SSH_PRIVATE_KEY_PATH=""
 SMOKE=false
 YES=false
+AWS_PROFILE_ARG=""
 
 # Filled by refresh_ec2_catalog (live AWS) or load_fallback_catalog.
 declare -A EC2_USD_HR=()
@@ -36,28 +39,49 @@ need_cmd() {
 
 usage() {
   cat <<'EOF'
-Usage: ./setup.sh [--smoke|-s] [--yes|-y] [--help|-h]
+Usage: ./setup.sh [options]
 
-  (no flags)   Menu: guided setup or smoke test
-  --smoke      Minimum instance (c7i.large, 40 GiB). Defaults only - Terraform
-               validation, not for pushing video. name_prefix=dronefeed-smoke
-  --yes        With --smoke: run init, plan, and apply without asking
+  (no flags)              Menu: guided setup or smoke test
+  -s, --smoke             Minimum instance (c7i.large, 40 GiB). Terraform check
+                          only — not for video. name_prefix=dronefeed-smoke
+  -y, --yes               Skip the "Run terraform init/plan/apply?" prompts
+                          (answer yes to all three)
+  -p, --aws-profile NAME  AWS shared profile (~/.aws/credentials or config);
+                          exported as AWS_PROFILE for aws + Terraform
+  -h, --help              Show this help
+
+Examples:
+  ./setup.sh -s -p spectre
+  ./setup.sh -s -p spectre -y
 EOF
 }
 
-for arg in "$@"; do
-  case "$arg" in
-    --smoke|-s) SMOKE=true ;;
-    --yes|-y) YES=true ;;
-    --help|-h)
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s|--smoke)
+      SMOKE=true
+      shift
+      ;;
+    -y|--yes)
+      YES=true
+      shift
+      ;;
+    -p|--aws-profile)
+      [[ $# -ge 2 ]] || die "$1 requires a profile name"
+      AWS_PROFILE_ARG="$2"
+      shift 2
+      ;;
+    -h|--help)
       usage
       exit 0
       ;;
     *)
-      die "unknown argument: $arg (try --help)"
+      die "unknown argument: $1 (try --help)"
       ;;
   esac
 done
+
+aws_profile_export "$AWS_PROFILE_ARG"
 
 load_fallback_catalog() {
   EC2_USD_HR=(
@@ -573,6 +597,9 @@ echo " DroneFeed - AWS setup wizard"
 hr
 info "IP-first stack (HTTP on Elastic IP). DNS/HTTPS optional later."
 info "Writes gitignored terraform.tfvars + secrets.auto.tfvars."
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  info "AWS_PROFILE:  $AWS_PROFILE"
+fi
 echo
 
 need_cmd terraform
@@ -580,13 +607,23 @@ need_cmd openssl
 need_cmd awk
 
 if command -v aws >/dev/null 2>&1; then
+  # aws_profile_require prints identity lines; rephrase with info() for consistency.
   if aws sts get-caller-identity >/dev/null 2>&1; then
     info "AWS identity: $(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
     info "Account:      $(aws sts get-caller-identity --query Account --output text 2>/dev/null)"
   else
+    if [[ -n "$AWS_PROFILE_ARG" ]]; then
+      echo "error: AWS profile '${AWS_PROFILE}' failed sts get-caller-identity." >&2
+      echo "  If this is SSO, run:  aws sso login --profile ${AWS_PROFILE}" >&2
+      echo "  Then retry." >&2
+      exit 1
+    fi
     echo "warning: aws sts get-caller-identity failed - check credentials before apply."
   fi
 else
+  if [[ -n "$AWS_PROFILE_ARG" ]]; then
+    die "aws CLI not found but --aws-profile was set"
+  fi
   info "aws CLI not found - OK if credentials are configured for Terraform."
 fi
 

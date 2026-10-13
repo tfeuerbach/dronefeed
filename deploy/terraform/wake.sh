@@ -5,12 +5,15 @@
 #
 # Usage:
 #   ./wake.sh 4|8|12|24
+#   ./wake.sh -p spectre 4
 #   ./wake.sh --status
 #   ./wake.sh --restore-schedule
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
+# shellcheck source=aws_profile.inc.sh
+source "$ROOT/aws_profile.inc.sh"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -18,21 +21,65 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing '$1'"
 }
 
+usage() {
+  cat <<EOF
+Usage: $0 [options] <4|8|12|24>
+       $0 [options] --status
+       $0 [options] --restore-schedule
+
+  -p, --aws-profile NAME  AWS shared profile (same as setup.sh / destroy.sh)
+  -h, --help              Show this help
+
+Starts the Terraform-managed EC2 instance and schedules a one-shot stop after N hours.
+Run from deploy/terraform with the same profile you used for apply.
+EOF
+}
+
+AWS_PROFILE_ARG=""
+ACTION=""
+HOURS=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p|--aws-profile)
+      [[ $# -ge 2 ]] || die "$1 requires a profile name"
+      AWS_PROFILE_ARG="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --status)
+      ACTION=status
+      shift
+      ;;
+    --restore-schedule)
+      ACTION=restore
+      shift
+      ;;
+    4|8|12|24)
+      ACTION=wake
+      HOURS="$1"
+      shift
+      ;;
+    *)
+      die "unknown argument: $1 (try --help)"
+      ;;
+  esac
+done
+
+[[ -n "$ACTION" ]] || { usage; exit 1; }
+
+aws_profile_export "$AWS_PROFILE_ARG"
 need_cmd aws
 need_cmd terraform
 need_cmd jq
 need_cmd date
 
-usage() {
-  cat <<EOF
-Usage: $0 <4|8|12|24>
-       $0 --status
-       $0 --restore-schedule
-
-Starts the Terraform-managed EC2 instance and schedules a one-shot stop after N hours.
-Uses the same AWS credentials as terraform apply. Run from deploy/terraform.
-EOF
-}
+if [[ -n "$AWS_PROFILE_ARG" ]]; then
+  aws_profile_require "$AWS_PROFILE_ARG"
+fi
 
 tf_out() {
   terraform output -raw "$1" 2>/dev/null || true
@@ -90,6 +137,7 @@ set_weekday_stop_state() {
 
 restore_weekday_stop() { set_weekday_stop_state ENABLED; }
 disable_weekday_stop() { set_weekday_stop_state DISABLED; }
+
 upsert_schedule() {
   local name="$1" at_expr="$2" target_arn="$3" target_role="$4" target_input="$5" desc="$6"
   local payload tmp
@@ -114,7 +162,6 @@ upsert_schedule() {
   if aws scheduler get-schedule --name "$name" --group-name default >/dev/null 2>&1; then
     aws scheduler update-schedule --cli-input-json "file://$tmp" >/dev/null
   else
-    # Prefer delete-after-completion for one-shots when the API supports it.
     jq '. + {ActionAfterCompletion: "DELETE"}' "$tmp" >"${tmp}.create"
     aws scheduler create-schedule --cli-input-json "file://${tmp}.create" >/dev/null 2>&1 \
       || aws scheduler create-schedule --cli-input-json "file://$tmp" >/dev/null
@@ -122,6 +169,7 @@ upsert_schedule() {
   fi
   rm -f "$tmp"
 }
+
 show_status() {
   local state
   state="$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
@@ -142,12 +190,11 @@ show_status() {
   fi
 }
 
-case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
-  --status) show_status; exit 0 ;;
-  --restore-schedule) restore_weekday_stop; exit 0 ;;
-  4|8|12|24) HOURS="$1" ;;
-  *) usage; exit 1 ;;
+case "$ACTION" in
+  status) show_status; exit 0 ;;
+  restore) restore_weekday_stop; exit 0 ;;
+  wake) ;;
+  *) die "internal: bad action $ACTION" ;;
 esac
 
 [[ -n "$ROLE_ARN" && "$ROLE_ARN" != "null" ]] || die "scheduler_role_arn missing — enable_business_hours_schedule must be true (default)"
@@ -157,7 +204,6 @@ aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
 aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 echo "Instance running."
 
-# at() expressions are UTC without timezone suffix.
 if date -u -d "+${HOURS} hours" +%Y-%m-%dT%H:%M:%S >/dev/null 2>&1; then
   STOP_AT="$(date -u -d "+${HOURS} hours" +%Y-%m-%dT%H:%M:%S)"
 elif date -u -v+"${HOURS}H" +%Y-%m-%dT%H:%M:%S >/dev/null 2>&1; then
@@ -169,21 +215,16 @@ AT_EXPR="at(${STOP_AT})"
 
 STOP_INPUT="$(jq -nc --arg id "$INSTANCE_ID" '{InstanceIds:[$id]}')"
 
-# If weekday stop would fire before wake ends, pause it and schedule restore at wake stop time.
 PAUSE_WEEKDAY=false
 if [[ -n "$STOP_NAME" && "$STOP_NAME" != "null" ]]; then
   STOP_STATE="$(aws scheduler get-schedule --name "$STOP_NAME" --group-name default --query 'State' --output text 2>/dev/null || echo DISABLED)"
   if [[ "$STOP_STATE" == "ENABLED" ]]; then
-    # Heuristic: if "now" local weekday and current hour < stop hour < wake end hour same day — pause.
-    # Safer approach: always pause weekday stop for the wake window and restore at STOP_AT.
-    # That keeps Mon–Fri schedule intact long-term without guessing cron next-fire.
     PAUSE_WEEKDAY=true
   fi
 fi
 
 if [[ "$PAUSE_WEEKDAY" == true ]]; then
   disable_weekday_stop
-  # Restore payload = current (disabled) schedule with State ENABLED
   tmp="$(mktemp)"
   aws scheduler get-schedule --name "$STOP_NAME" --group-name default >"$tmp"
   RESTORE_INPUT="$(jq -c '{

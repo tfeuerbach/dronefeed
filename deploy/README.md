@@ -106,9 +106,10 @@ docker compose --env-file .env up -d --build
 ### AWS bootstrap (Terraform)
 
 See **[terraform/README.md](./terraform/README.md)**: push your branch/tag, then
-`cd deploy/terraform && ./setup.sh` (or `./setup.sh --smoke` to validate
-Terraform only). App at `http://<elastic-ip>`. Admin credentials print at the
-end of setup and on the host in `/opt/drone-feed/DEPLOY.txt`.
+`cd deploy/terraform && ./setup.sh -s -p <profile>` (smoke) or `./setup.sh -p
+<profile>` (guided). Tear down with `./destroy.sh -p <profile>`. App at
+`http://<elastic-ip>`. Admin credentials print at the end of setup and on the
+host in `/opt/drone-feed/DEPLOY.txt`.
 
 - Migrations + optional admin bootstrap run via `deploy/entrypoint.sh`
 - Certs live in the `caddy_data` volume and renew automatically

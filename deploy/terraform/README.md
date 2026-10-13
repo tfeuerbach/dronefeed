@@ -14,11 +14,11 @@ No Route 53, ACM, or domain is created here.
 
 ## Prerequisites
 
-1. AWS credentials for the target account:
+1. AWS credentials for the target account (profile or env):
 
    ```bash
-   export AWS_PROFILE=<profile>   # if you use profiles
-   aws sts get-caller-identity
+   aws sts get-caller-identity --profile spectre
+   # or pass the profile into setup (see below)
    ```
 
 2. Tools: `terraform`, `aws`, `openssl`, `ssh-keygen`, `python3` (live instance
@@ -33,12 +33,21 @@ No Route 53, ACM, or domain is created here.
 
 ```bash
 cd deploy/terraform
-./setup.sh              # menu: guided or smoke
-./setup.sh --smoke      # cheapest c7i + 40 GiB — Terraform check only, no video
-./setup.sh --smoke -y   # smoke + init/plan/apply with no prompts
+./setup.sh                    # menu: guided or smoke
+./setup.sh -s -p spectre      # smoke in that profile's account
+./setup.sh -s -p spectre -y   # same, skip init/plan/apply prompts
 ```
 
-Smoke uses `name_prefix=dronefeed-smoke`. Destroy when done: `terraform destroy`.
+| Flag | Meaning |
+|------|---------|
+| `-s` / `--smoke` | Cheapest stack (`dronefeed-smoke`) — Terraform check, not for video |
+| `-p` / `--aws-profile NAME` | Use that AWS shared profile (`AWS_PROFILE`) |
+| `-y` / `--yes` | Auto-yes to terraform init / plan / apply prompts |
+| `-h` / `--help` | Help |
+
+If STS fails with an SSO profile, run `aws sso login --profile <name>` and retry.
+
+Smoke uses `name_prefix=dronefeed-smoke`. Tear down with [`./destroy.sh`](#destroy) when done.
 
 Guided flow: tags → workload sizing → SSH → admin → repo → email/EIP → offline
 page → schedule → init/plan/apply. Instance type and disk you pick are what
@@ -72,12 +81,12 @@ gitignored `handoff.txt` / `handoff.env`. Admin credentials also live in
 
 ## After-hours wake
 
-Weekday schedules stay enabled:
+Weekday schedules stay enabled. Use the same `-p` profile as apply:
 
 ```bash
-./wake.sh 4          # or 8, 12, 24
-./wake.sh --status
-./wake.sh --restore-schedule
+./wake.sh -p spectre 4
+./wake.sh -p spectre --status
+./wake.sh -p spectre --restore-schedule
 ```
 
 Starts the instance, sets a one-shot stop, and only briefly pauses the weekday
@@ -184,10 +193,27 @@ Disk: 80–200+ GiB gp3 from retention (wizard estimates from feeds × hours × 
 
 ## Destroy
 
+Tear down everything in **this directory’s Terraform state** (the stack you
+applied from here):
+
 ```bash
 cd deploy/terraform
-terraform destroy
+./destroy.sh -p spectre        # prompts for “yes”
+./destroy.sh -p spectre -y     # terraform destroy -auto-approve
 ```
 
-Removes EC2 and the maintenance S3/CloudFront stack. Delete any manual UI
-CloudFront / Lambda@Edge / DNS records yourself.
+`./destroy.sh` will:
+
+1. Export `-p` / `--aws-profile` (same as setup/wake)
+2. Show account identity + `name_prefix` / instance / IP from state
+3. Run `terraform destroy` (with `-auto-approve` if `-y`)
+
+**Removes:** EC2, ENI, EIP, VPC/subnet/SG/IGW, weekday schedulers (and wake
+one-shots), IAM roles/profiles this stack created, offline S3 + CloudFront if
+they were enabled.
+
+**Does not remove:** DNS / UI CloudFront / Lambda@Edge / ACM you created in
+another account; local gitignored files (`terraform.tfvars`,
+`secrets.auto.tfvars`, `handoff.*`, `keys/`).
+
+Equivalent manual form: `AWS_PROFILE=spectre terraform destroy`.
