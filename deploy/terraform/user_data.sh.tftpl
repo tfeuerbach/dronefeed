@@ -18,7 +18,38 @@ ADMIN_EMAIL="$(printf '%s' '${admin_email_b64}' | base64 -d)"
 ADMIN_PASSWORD="$(printf '%s' '${admin_password_b64}' | base64 -d)"
 
 dnf -y update
-dnf -y install docker git openssl python3
+dnf -y install docker git openssl python3 dnf-automatic
+
+# AL2023 AMIs lock to a repo snapshot; without this, dnf-automatic never sees
+# newer security advisories. Fine for a single long-lived niche host.
+printf 'latest\n' >/etc/dnf/vars/releasever
+
+# Security-only auto-apply (not full upgrades). Timer installs when available.
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("/etc/dnf/automatic.conf")
+text = path.read_text()
+out = []
+section = None
+for line in text.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        section = stripped[1:-1]
+        out.append(line)
+        continue
+    if section == "commands" and "=" in line and not stripped.startswith("#"):
+        key = stripped.split("=", 1)[0].strip()
+        if key == "upgrade_type":
+            out.append("upgrade_type = security")
+            continue
+        if key == "apply_updates":
+            out.append("apply_updates = yes")
+            continue
+    out.append(line)
+path.write_text("\n".join(out) + "\n")
+PY
+systemctl enable --now dnf-automatic-install.timer
 
 systemctl enable --now docker
 

@@ -8,7 +8,7 @@ No Route 53, ACM, or domain is created here.
 |--|--|
 | App URL | `http://<elastic-ip>` |
 | SSH | `dronefeed` + key from setup |
-| Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12\|24` |
+| Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12` (max 12h) |
 | Offline page | `terraform output -raw maintenance_url` |
 | Email | Off by default |
 
@@ -28,6 +28,10 @@ No Route 53, ACM, or domain is created here.
    clones that ref — local-only changes are ignored. The ref needs
    `deploy/Caddyfile.http` and runtime `PHX_SCHEME` / `force_ssl` (HTTP mode
    must not force HTTPS at compile time).
+
+First boot also enables Amazon Linux **security-only** auto-updates
+(`dnf-automatic-install` + `releasever=latest`). App/container updates stay
+manual.
 
 ## Setup
 
@@ -81,16 +85,22 @@ gitignored `handoff.txt` / `handoff.env`. Admin credentials also live in
 
 ## After-hours wake
 
-Weekday schedules stay enabled. Use the same `-p` profile as apply:
+Use the same `-p` profile as apply. Hours are **1–12** (no 24h wakes):
 
 ```bash
 ./wake.sh -p spectre 4
+./wake.sh -p spectre 12
 ./wake.sh -p spectre --status
 ./wake.sh -p spectre --restore-schedule
 ```
 
-Starts the instance, sets a one-shot stop, and only briefly pauses the weekday
-stop if that stop would cut the wake window short.
+Behavior:
+
+- **Weekend / pure after-hours:** start now, one-shot stop after N hours.
+- **Wake overlaps a weekday start** (e.g. 6am for 4h with 8:00 business start),
+  **or you wake during business hours:** no wake timer. Weekday schedule takes
+  over — instance stays up until the normal weekday stop (e.g. 18:00), not N
+  hours after the wake command.
 
 ## Domain and HTTPS (optional, often another account)
 

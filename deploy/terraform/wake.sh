@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# After-hours wake: start the DroneFeed EC2 for N hours, then stop it.
-# Keeps weekday Mon–Fri schedules enabled (briefly pauses weekday stop only if it
-# would cut the wake window short, then auto-restores).
+# After-hours wake: start the DroneFeed EC2 for N hours (max 12).
+#
+# If the wake window hits a weekday business-hours start (or you wake during
+# business hours), the weekday schedule takes over: no one-shot wake stop;
+# the instance stays up until the weekday stop hour.
+# Otherwise a one-shot stop fires after N hours.
 #
 # Usage:
-#   ./wake.sh 4|8|12|24
+#   ./wake.sh 4|8|12
 #   ./wake.sh -p spectre 4
 #   ./wake.sh --status
 #   ./wake.sh --restore-schedule
@@ -23,15 +26,18 @@ need_cmd() {
 
 usage() {
   cat <<EOF
-Usage: $0 [options] <4|8|12|24>
+Usage: $0 [options] <hours>
        $0 [options] --status
        $0 [options] --restore-schedule
 
+  hours                   1–12 (typical: 4, 8, or 12)
   -p, --aws-profile NAME  AWS shared profile (same as setup.sh / destroy.sh)
   -h, --help              Show this help
 
-Starts the Terraform-managed EC2 instance and schedules a one-shot stop after N hours.
-Run from deploy/terraform with the same profile you used for apply.
+Starts the Terraform-managed EC2 out of hours. Max 12h one-shot wake.
+If a weekday business-hours start falls inside the wake window (or you wake
+during business hours), the weekday stop schedule owns shutdown instead —
+the box stays up until the normal end-of-day stop, not the wake expiry.
 EOF
 }
 
@@ -58,13 +64,14 @@ while [[ $# -gt 0 ]]; do
       ACTION=restore
       shift
       ;;
-    4|8|12|24)
-      ACTION=wake
-      HOURS="$1"
-      shift
-      ;;
     *)
-      die "unknown argument: $1 (try --help)"
+      if [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 12)); then
+        ACTION=wake
+        HOURS=$((10#$1))
+        shift
+      else
+        die "unknown argument: $1 (hours must be 1–12; try --help)"
+      fi
       ;;
   esac
 done
@@ -76,6 +83,7 @@ need_cmd aws
 need_cmd terraform
 need_cmd jq
 need_cmd date
+need_cmd python3
 
 if [[ -n "$AWS_PROFILE_ARG" ]]; then
   aws_profile_require "$AWS_PROFILE_ARG"
@@ -97,6 +105,9 @@ NAME_PREFIX="$(tf_out name_prefix)"
 
 ROLE_ARN="$(tf_out scheduler_role_arn)"
 STOP_NAME="$(tf_out schedule_stop_name)"
+SCHED_TZ="$(tf_out schedule_timezone)"
+SCHED_START="$(tf_out schedule_start_hour)"
+SCHED_STOP="$(tf_out schedule_stop_hour)"
 WAKE_STOP_NAME="${NAME_PREFIX}-ec2-wake-stop"
 WAKE_RESTORE_NAME="${NAME_PREFIX}-ec2-wake-restore"
 
@@ -138,6 +149,14 @@ set_weekday_stop_state() {
 restore_weekday_stop() { set_weekday_stop_state ENABLED; }
 disable_weekday_stop() { set_weekday_stop_state DISABLED; }
 
+delete_schedule_if_exists() {
+  local name="$1"
+  if aws scheduler get-schedule --name "$name" --group-name default >/dev/null 2>&1; then
+    aws scheduler delete-schedule --name "$name" --group-name default >/dev/null
+    echo "Removed one-shot schedule $name"
+  fi
+}
+
 upsert_schedule() {
   local name="$1" at_expr="$2" target_arn="$3" target_role="$4" target_input="$5" desc="$6"
   local payload tmp
@@ -170,6 +189,42 @@ upsert_schedule() {
   rm -f "$tmp"
 }
 
+# Exit 0 if weekday schedule should own shutdown (no wake one-shot stop).
+schedule_takes_over() {
+  local hours="$1"
+  [[ -n "$SCHED_TZ" && "$SCHED_TZ" != "null" ]] || return 1
+  [[ -n "$SCHED_START" && "$SCHED_START" != "null" ]] || return 1
+  [[ -n "$SCHED_STOP" && "$SCHED_STOP" != "null" ]] || return 1
+  HOURS="$hours" TZ_NAME="$SCHED_TZ" START_H="$SCHED_START" STOP_H="$SCHED_STOP" python3 - <<'PY'
+from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
+import os, sys
+
+hours = int(os.environ["HOURS"])
+tz = ZoneInfo(os.environ["TZ_NAME"])
+start_h = int(os.environ["START_H"])
+stop_h = int(os.environ["STOP_H"])
+now = datetime.now(tz)
+wake_end = now + timedelta(hours=hours)
+
+d = now.date()
+end_d = wake_end.date()
+one = timedelta(days=1)
+while d <= end_d:
+    if d.weekday() < 5:  # Mon–Fri
+        start_dt = datetime.combine(d, time(start_h, 0), tzinfo=tz)
+        stop_dt = datetime.combine(d, time(stop_h, 0), tzinfo=tz)
+        # Weekday start fires while wake is still active → schedule owns the day.
+        if now < start_dt < wake_end:
+            sys.exit(0)
+        # Already inside today's business window → weekday stop owns shutdown.
+        if start_dt <= now < stop_dt:
+            sys.exit(0)
+    d += one
+sys.exit(1)
+PY
+}
+
 show_status() {
   local state
   state="$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
@@ -181,6 +236,9 @@ show_status() {
     echo "Weekday stop ($STOP_NAME): $s"
   else
     echo "Weekday schedule: not enabled in this stack"
+  fi
+  if [[ -n "$SCHED_TZ" && "$SCHED_TZ" != "null" ]]; then
+    echo "Business hours: Mon–Fri ${SCHED_START}:00→${SCHED_STOP}:00 $SCHED_TZ"
   fi
   if aws scheduler get-schedule --name "$WAKE_STOP_NAME" --group-name default >/dev/null 2>&1; then
     aws scheduler get-schedule --name "$WAKE_STOP_NAME" --group-name default \
@@ -212,9 +270,34 @@ else
   die "cannot compute stop time (need GNU or BSD date)"
 fi
 AT_EXPR="at(${STOP_AT})"
-
 STOP_INPUT="$(jq -nc --arg id "$INSTANCE_ID" '{InstanceIds:[$id]}')"
 
+PUBLIC_IP="$(tf_out public_ip)"
+HANDOFF=false
+if schedule_takes_over "$HOURS"; then
+  HANDOFF=true
+fi
+
+if [[ "$HANDOFF" == true ]]; then
+  # Weekday schedule owns power from here: keep stop enabled, drop any wake one-shot.
+  restore_weekday_stop
+  delete_schedule_if_exists "$WAKE_STOP_NAME"
+  delete_schedule_if_exists "$WAKE_RESTORE_NAME"
+  echo
+  echo "Wake → weekday schedule takes over"
+  echo "  Instance:     $INSTANCE_ID"
+  echo "  App URL:      http://${PUBLIC_IP}"
+  echo "  Requested:    ${HOURS}h wake (would have ended ${STOP_AT}Z)"
+  echo "  Shutdown:     weekday stop ${SCHED_STOP}:00 ${SCHED_TZ} (not the wake timer)"
+  echo "  Business hrs: Mon–Fri ${SCHED_START}:00→${SCHED_STOP}:00 ${SCHED_TZ}"
+  echo
+  show_status
+  exit 0
+fi
+
+# Pure out-of-hours wake: one-shot stop after N hours.
+# Pause weekday stop only if it is enabled (so a same-day stop cannot cut the wake short);
+# restore it when the wake ends.
 PAUSE_WEEKDAY=false
 if [[ -n "$STOP_NAME" && "$STOP_NAME" != "null" ]]; then
   STOP_STATE="$(aws scheduler get-schedule --name "$STOP_NAME" --group-name default --query 'State' --output text 2>/dev/null || echo DISABLED)"
@@ -256,12 +339,11 @@ upsert_schedule "$WAKE_STOP_NAME" "$AT_EXPR" \
   "$STOP_INPUT" \
   "Wake one-shot stop after ${HOURS}h"
 
-PUBLIC_IP="$(tf_out public_ip)"
 echo
-echo "Wake armed for ${HOURS}h"
+echo "Wake armed for ${HOURS}h (max 12)"
 echo "  Instance:  $INSTANCE_ID"
 echo "  App URL:   http://${PUBLIC_IP}"
 echo "  Stops at:  ${STOP_AT}Z (one-shot $WAKE_STOP_NAME)"
-echo "  Weekday Mon–Fri start/stop schedules remain configured; stop was paused only if needed and will be re-enabled."
+echo "  No weekday start in this window — using wake timer."
 echo
 show_status

@@ -92,10 +92,27 @@ output "next_steps" {
   EOT
 }
 
+output "schedule_timezone" {
+  description = "IANA timezone for weekday start/stop (null if schedule disabled)."
+  value       = var.enable_business_hours_schedule ? var.schedule_timezone : null
+}
+
+output "schedule_start_hour" {
+  description = "Weekday start hour 0–23 local (null if schedule disabled)."
+  value       = var.enable_business_hours_schedule ? var.schedule_start_hour : null
+}
+
+output "schedule_stop_hour" {
+  description = "Weekday stop hour 0–23 local (null if schedule disabled)."
+  value       = var.enable_business_hours_schedule ? var.schedule_stop_hour : null
+}
+
 output "business_hours_schedule" {
   description = "Weekday auto start/stop summary (null if disabled)."
   value = var.enable_business_hours_schedule ? {
     timezone           = var.schedule_timezone
+    start_hour         = var.schedule_start_hour
+    stop_hour          = var.schedule_stop_hour
     start_cron         = "Mon–Fri ${var.schedule_start_hour}:00"
     stop_cron          = "Mon–Fri ${var.schedule_stop_hour}:00"
     start_name         = aws_scheduler_schedule.ec2_start[0].name
