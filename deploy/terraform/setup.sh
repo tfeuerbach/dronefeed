@@ -32,6 +32,7 @@ HOURS_PER_MONTH_FULL=730
 WEEKDAYS_PER_MONTH=21.7
 
 die() { echo "error: $*" >&2; exit 1; }
+warn() { echo "  warning: $*" >&2; }
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing $1 - install it and re-run"
@@ -503,6 +504,41 @@ slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
 }
 
+# S3 bucket naming (AWS rules, simplified). Empty string = caller will auto-name.
+valid_s3_bucket_name() {
+  local b="$1" n
+  [[ -z "$b" ]] && return 0
+  n=${#b}
+  ((n >= 3 && n <= 63)) || return 1
+  [[ "$b" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] || return 1
+  [[ "$b" != *..* && "$b" != *.-* && "$b" != *-.* ]] || return 1
+  # Reject looking like an IP address.
+  [[ ! "$b" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  # Common footgun: pasting a region as the bucket name.
+  [[ "$b" != us-east-1 && "$b" != us-east-2 && "$b" != us-west-2 && "$b" != eu-west-1 ]] || return 1
+  return 0
+}
+
+prompt_s3_bucket_name() {
+  local q="$1" def="${2-}" ans
+  while true; do
+    ans="$(prompt "$q" "$def")"
+    if valid_s3_bucket_name "$ans"; then
+      echo "$ans"
+      return
+    fi
+    warn "Invalid S3 bucket name '$ans'."
+    info "Use 3-63 chars: lowercase letters, numbers, dots, hyphens (e.g. dronefeed-after-hours-123)."
+    info "Leave blank for the auto name. Do not use a region code like us-east-1."
+    def=""
+  done
+}
+
+confirm_continue() {
+  local q="$1"
+  prompt_yn "$q" n || die "Aborted."
+}
+
 gen_admin_password() {
   local base
   base="$(openssl rand -base64 12 | tr -d '\n=/+' | cut -c1-10)"
@@ -627,6 +663,19 @@ else
   info "aws CLI not found - OK if credentials are configured for Terraform."
 fi
 
+# Half-applied stacks + a fresh wizard = pain. Detect before rewriting tfvars.
+if [[ -d "$ROOT/.terraform" ]]; then
+  STATE_COUNT="$(terraform state list 2>/dev/null | wc -l | tr -d ' ' || true)"
+  if [[ "${STATE_COUNT:-0}" -gt 0 ]]; then
+    echo
+    warn "Terraform state already has ${STATE_COUNT} resources in:"
+    info "$ROOT"
+    info "If the last apply failed mid-way, prefer:  ./destroy.sh -p ${AWS_PROFILE:-<profile>}"
+    info "Or finish with:  terraform apply"
+    confirm_continue "Continue wizard anyway (may overwrite tfvars while state still exists)?"
+  fi
+fi
+
 if [[ "$SMOKE" != true ]]; then
   MODE="$(pick 1 "What do you want to run?" \
     "guided - full setup (pick size, keys, schedule, ...)" \
@@ -701,7 +750,9 @@ UI_USERS="$(prompt "Peak concurrent UI users (browsers, not SRT viewers)" "5")"
 [[ "$UI_USERS" =~ ^[0-9]+$ ]] || die "UI users must be an integer"
 
 FANOUT="n"
-prompt_yn "Heavy fan-out? (many simultaneous SRT/RTSP/RTMP pullers on fat streams)" n && FANOUT="y"
+info "Fan-out = many clients pulling the same live/VOD streams at once (SRT/RTSP/RTMP),"
+info "not browser UI users. Say yes if demos will have lots of concurrent pullers."
+prompt_yn "Expect heavy stream fan-out (many simultaneous pullers)?" n && FANOUT="y"
 
 RETENTION_DAYS="$(prompt "Recording retention days to size disk for" "5")"
 [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && ((RETENTION_DAYS >= 1)) || die "retention days must be a positive integer"
@@ -747,6 +798,18 @@ if [[ "$INSTANCE_TYPE" == "custom" ]]; then
   INSTANCE_TYPE="$(prompt "Instance type" "$REC_INSTANCE")"
 fi
 
+case "$INSTANCE_TYPE" in
+  c7i.large|c7i.xlarge|t3.*|t3a.*)
+    if ((FEEDS >= 2)) || [[ "$FANOUT" == y ]]; then
+      echo
+      warn "Instance $INSTANCE_TYPE is undersized for ~${FEEDS} feeds"
+      [[ "$FANOUT" == y ]] && warn "(and you said yes to heavy stream fan-out)."
+      info "Recommended was ${REC_INSTANCE}. First-boot Docker builds can also OOM on small boxes."
+      confirm_continue "Keep $INSTANCE_TYPE anyway?"
+    fi
+    ;;
+esac
+
 declare -a DISK_OPTS=("${REC_ROOT} - recommended")
 for s in 80 120 200 300 500; do
   [[ "$s" == "$REC_ROOT" ]] && continue
@@ -760,7 +823,44 @@ if [[ "$ROOT_GB" == "custom" ]]; then
 fi
 [[ "$ROOT_GB" =~ ^[0-9]+$ ]] && ((ROOT_GB >= 30)) || die "root volume must be an integer >= 30"
 
-AZ="$(prompt "Availability zone (blank = first in region)" "")"
+if ((ROOT_GB < REC_ROOT)); then
+  echo
+  warn "Root disk ${ROOT_GB} GiB is below the recommended ${REC_ROOT} GiB for your workload/retention."
+  info "You can grow EBS later, but recordings may fill the disk sooner."
+  confirm_continue "Keep ${ROOT_GB} GiB anyway?"
+fi
+
+# AZ must be blank (Terraform picks first) or a real zone letter, never the region alone.
+AZ=""
+while true; do
+  AZ="$(prompt "Availability zone (blank = first in region; e.g. ${AWS_REGION}a — not ${AWS_REGION})" "")"
+  if [[ -z "$AZ" ]]; then
+    break
+  fi
+  if [[ "$AZ" == "$AWS_REGION" ]]; then
+    warn "'$AZ' is the region, not an AZ. Use ${AWS_REGION}a / ${AWS_REGION}b / … or leave blank."
+    continue
+  fi
+  if [[ ! "$AZ" =~ ^[a-z0-9]+-[a-z]+-[0-9]+[a-z]$ ]]; then
+    warn "Expected form like ${AWS_REGION}a (region name + letter). Got: $AZ"
+    continue
+  fi
+  if [[ "$AZ" != "$AWS_REGION"* ]]; then
+    warn "AZ '$AZ' does not start with region '$AWS_REGION'."
+    continue
+  fi
+  if command -v aws >/dev/null 2>&1; then
+    if ! aws ec2 describe-availability-zones \
+      --region "$AWS_REGION" \
+      --zone-names "$AZ" \
+      --query 'AvailabilityZones[0].ZoneName' \
+      --output text 2>/dev/null | grep -qx "$AZ"; then
+      warn "AWS does not list '$AZ' as an availability zone in $AWS_REGION."
+      continue
+    fi
+  fi
+  break
+done
 
 echo
 info "Selected: $INSTANCE_TYPE + ${ROOT_GB} GiB in ${AWS_REGION}${AZ:+/$AZ}"
@@ -903,10 +1003,10 @@ if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
   info "Offline HTML lives in S3; CloudFront serves it when you wire DNS failover later."
   if prompt_yn "Create a new S3 bucket for the offline page?" y; then
     MAINT_CREATE="true"
-    MAINT_BUCKET="$(prompt "New bucket name (blank = ${NAME_PREFIX}-after-hours-<account_id>)" "")"
+    MAINT_BUCKET="$(prompt_s3_bucket_name "New bucket name (blank = ${NAME_PREFIX}-after-hours-<account_id>)" "")"
   else
     MAINT_CREATE="false"
-    MAINT_BUCKET="$(prompt "Existing S3 bucket name" "")"
+    MAINT_BUCKET="$(prompt_s3_bucket_name "Existing S3 bucket name" "")"
     [[ -n "$MAINT_BUCKET" ]] || die "existing bucket name is required"
     info "Terraform will set this buckets policy for CloudFront OAC (replaces bucket policy)."
   fi
@@ -943,6 +1043,15 @@ if prompt_yn "Auto start/stop EC2 on weekdays (saves money off-hours)?" y; then
   [[ "$SCHEDULE_START" =~ ^[0-9]+$ && "$SCHEDULE_STOP" =~ ^[0-9]+$ ]] || die "hours must be integers"
   ((SCHEDULE_START >= 0 && SCHEDULE_START <= 23)) || die "start hour out of range"
   ((SCHEDULE_STOP >= 0 && SCHEDULE_STOP <= 23)) || die "stop hour out of range"
+  if ((SCHEDULE_STOP == SCHEDULE_START)); then
+    die "stop hour must differ from start hour"
+  fi
+  if ((SCHEDULE_STOP < SCHEDULE_START)); then
+    echo
+    warn "Stop hour (${SCHEDULE_STOP}) is before start (${SCHEDULE_START}) — overnight window (crosses midnight)."
+    info "Weekday cron still fires both times; confirm that is what you want."
+    confirm_continue "Keep overnight schedule ${SCHEDULE_START}:00 -> ${SCHEDULE_STOP}:00?"
+  fi
 else
   ENABLE_SCHEDULE="false"
 fi

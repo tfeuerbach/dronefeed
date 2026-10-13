@@ -51,6 +51,18 @@ path.write_text("\n".join(out) + "\n")
 PY
 systemctl enable --now dnf-automatic-install.timer
 
+# Swap for first-boot Docker/Elixir builds (OOM/137 without it on smaller boxes).
+if ! swapon --show 2>/dev/null | grep -q .; then
+  if fallocate -l 4G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none; then
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >>/etc/fstab
+  else
+    echo "WARN: could not create /swapfile; compose build may OOM on small instances" >&2
+  fi
+fi
+
 systemctl enable --now docker
 
 # Compose v2 plugin (AL2023 may already ship it; otherwise pin a known release).

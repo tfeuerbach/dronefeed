@@ -30,8 +30,9 @@ No Route 53, ACM, or domain is created here.
    must not force HTTPS at compile time).
 
 First boot also enables Amazon Linux **security-only** auto-updates
-(`dnf-automatic-install` + `releasever=latest`). App/container updates stay
-manual.
+(`dnf-automatic-install` + `releasever=latest`), a **4 GiB swap file** (helps
+Docker/Elixir builds avoid OOM), and passwordless sudo for the deploy user.
+App/container updates stay manual.
 
 ## Setup
 
