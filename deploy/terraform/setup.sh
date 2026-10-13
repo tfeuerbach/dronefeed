@@ -91,10 +91,23 @@ load_fallback_catalog() {
     [c7i.2xlarge]=0.3570
     [c7i.4xlarge]=0.7140
     [c7i.8xlarge]=1.4280
+    [c7i.12xlarge]=2.1420
+    [c7i.16xlarge]=2.8560
+    [c7i.24xlarge]=4.2840
+    [c7i.48xlarge]=8.5680
   )
-  EC2_VCPU=([c7i.large]=2 [c7i.xlarge]=4 [c7i.2xlarge]=8 [c7i.4xlarge]=16 [c7i.8xlarge]=32)
-  EC2_RAM_GB=([c7i.large]=4 [c7i.xlarge]=8 [c7i.2xlarge]=16 [c7i.4xlarge]=32 [c7i.8xlarge]=64)
-  EC2_TYPES=(c7i.large c7i.xlarge c7i.2xlarge c7i.4xlarge c7i.8xlarge)
+  EC2_VCPU=(
+    [c7i.large]=2 [c7i.xlarge]=4 [c7i.2xlarge]=8 [c7i.4xlarge]=16 [c7i.8xlarge]=32
+    [c7i.12xlarge]=48 [c7i.16xlarge]=64 [c7i.24xlarge]=96 [c7i.48xlarge]=192
+  )
+  EC2_RAM_GB=(
+    [c7i.large]=4 [c7i.xlarge]=8 [c7i.2xlarge]=16 [c7i.4xlarge]=32 [c7i.8xlarge]=64
+    [c7i.12xlarge]=96 [c7i.16xlarge]=128 [c7i.24xlarge]=192 [c7i.48xlarge]=384
+  )
+  EC2_TYPES=(
+    c7i.large c7i.xlarge c7i.2xlarge c7i.4xlarge c7i.8xlarge
+    c7i.12xlarge c7i.16xlarge c7i.24xlarge c7i.48xlarge
+  )
   GP3_USD_GB_MO=0.08
   PRICES_SOURCE="fallback (static us-east-1 ballpark)"
 }
@@ -285,6 +298,10 @@ resolve_instance_type() {
       c7i.2xlarge) want_v=8 ;;
       c7i.4xlarge) want_v=16 ;;
       c7i.8xlarge) want_v=32 ;;
+      c7i.12xlarge) want_v=48 ;;
+      c7i.16xlarge) want_v=64 ;;
+      c7i.24xlarge) want_v=96 ;;
+      c7i.48xlarge) want_v=192 ;;
       *) want_v=8 ;;
     esac
   fi
@@ -337,8 +354,10 @@ apply_smoke_defaults() {
   FEEDS=0
   HEIGHT="720"
   UI_USERS=0
+  PULLERS=0
   FANOUT="n"
   RETENTION_DAYS=1
+  REC_VCPU_NEED=0
   refresh_ec2_catalog "$AWS_REGION"
   INSTANCE_TYPE="$(smallest_instance_type)"
   ROOT_GB=40
@@ -554,24 +573,61 @@ ec2_hr() {
   fi
 }
 
-recommend_instance() {
-  local feeds="$1" height="$2" users="$3" fanout="$4"
-  local weight="$feeds"
+# Estimate vCPUs for DroneFeed: continuous libx264 public encodes dominate;
+# MediaMTX pull fan-out and Phoenix UI are lighter but real.
+# Heuristic (not a bench) — calibrated so ~4×720p + light pullers → c7i.4xlarge,
+# and large encode fleets climb the full c7i catalog (12xlarge+).
+estimate_workload_vcpu() {
+  local feeds="$1" height="$2" users="$3" pullers="$4"
+  local per_feed=2 platform=2 need pull_v ui_v
   case "$height" in
-    1080) weight=$((feeds * 2)) ;;
-    source) weight=$((feeds * 3)) ;;
+    1080) per_feed=4 ;;
+    source) per_feed=6 ;;
   esac
-  [[ "$fanout" == y ]] && weight=$((weight + 2))
-  ((users > 25)) && weight=$((weight + 1))
-  if ((weight <= 2)); then
-    echo "c7i.xlarge"
-  elif ((weight <= 4)); then
-    echo "c7i.2xlarge"
-  elif ((weight <= 8)); then
-    echo "c7i.4xlarge"
+  need=$((platform + feeds * per_feed))
+  # Remux/packet path: ~1 vCPU per 20 pullers, plus steps at demo-scale fan-out
+  pull_v=$(((pullers + 19) / 20))
+  ((pullers > 50)) && pull_v=$((pull_v + 2))
+  ((pullers > 200)) && pull_v=$((pull_v + 4))
+  ((pullers > 500)) && pull_v=$((pull_v + 8))
+  need=$((need + pull_v))
+  # LiveView browsers are cheap vs encodes
+  ui_v=$(((users + 49) / 50))
+  need=$((need + ui_v))
+  # ~20% headroom for spikes / OS / compose leftovers
+  need=$(((need * 6 + 4) / 5))
+  ((need < 2)) && need=2
+  echo "$need"
+}
+
+# Smallest catalog type with enough vCPU (and RAM >= ~1.5 GiB/vCPU soft floor via c7i ratio).
+pick_instance_for_vcpu() {
+  local need_v="$1" t v best="" best_v=999999
+  for t in "${EC2_TYPES[@]}"; do
+    v="${EC2_VCPU[$t]:-0}"
+    ((v <= 0)) && continue
+    if ((v >= need_v && v < best_v)); then
+      best="$t"
+      best_v=$v
+    fi
+  done
+  if [[ -n "$best" ]]; then
+    echo "$best"
+    return
+  fi
+  # Need exceeds catalog — return largest and let caller warn.
+  if ((${#EC2_TYPES[@]} > 0)); then
+    echo "${EC2_TYPES[-1]}"
   else
     echo "c7i.8xlarge"
   fi
+}
+
+recommend_instance() {
+  local feeds="$1" height="$2" users="$3" pullers="$4"
+  local need
+  need="$(estimate_workload_vcpu "$feeds" "$height" "$users" "$pullers")"
+  pick_instance_for_vcpu "$need"
 }
 
 recommend_root_gb() {
@@ -734,11 +790,12 @@ fi
 echo
 refresh_ec2_catalog "$AWS_REGION"
 echo
-info "Public feeds are continuous CPU encodes (libx264). CPU is usually the limit."
-info "Typical prod: <=4 feeds @720p -> c7i.2xlarge. More / 1080p -> c7i.4xlarge+."
+info "Sizing is DroneFeed-specific: public feeds = continuous libx264 encodes (CPU-heavy)."
+info "Media pullers (SRT/RTSP/RTMP) and UI browsers are lighter but counted separately."
+info "Heuristic picks the smallest c7i in the live catalog with enough vCPU (+~25% headroom)."
 echo
 
-FEEDS="$(prompt "Peak concurrent public feeds (live + VOD republish)" "2")"
+FEEDS="$(prompt "Peak concurrent public feeds (live + VOD republish encodes)" "2")"
 [[ "$FEEDS" =~ ^[0-9]+$ ]] && ((FEEDS >= 1)) || die "feeds must be a positive integer"
 
 HEIGHT="$(pick 1 "Typical public output resolution" \
@@ -746,39 +803,50 @@ HEIGHT="$(pick 1 "Typical public output resolution" \
   "1080 - heavier CPU per feed" \
   "source - keep source resolution (highest CPU)")"
 
-UI_USERS="$(prompt "Peak concurrent UI users (browsers, not SRT viewers)" "5")"
+UI_USERS="$(prompt "Peak concurrent UI users (browsers / LiveView)" "5")"
 [[ "$UI_USERS" =~ ^[0-9]+$ ]] || die "UI users must be an integer"
 
+info "Pullers = research tools / players opening SRT, RTSP, or RTMP — not website tabs."
+PULLERS="$(prompt "Peak concurrent media pullers (SRT/RTSP/RTMP)" "10")"
+[[ "$PULLERS" =~ ^[0-9]+$ ]] || die "pullers must be an integer"
 FANOUT="n"
-info "Fan-out = many clients pulling the same live/VOD streams at once (SRT/RTSP/RTMP),"
-info "not browser UI users. Say yes if demos will have lots of concurrent pullers."
-prompt_yn "Expect heavy stream fan-out (many simultaneous pullers)?" n && FANOUT="y"
+((PULLERS >= 20)) && FANOUT="y"
 
 RETENTION_DAYS="$(prompt "Recording retention days to size disk for" "5")"
 [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && ((RETENTION_DAYS >= 1)) || die "retention days must be a positive integer"
 
 REC_HOURS_HINT=10
-REC_INSTANCE="$(resolve_instance_type "$(recommend_instance "$FEEDS" "$HEIGHT" "$UI_USERS" "$FANOUT")")"
+REC_VCPU_NEED="$(estimate_workload_vcpu "$FEEDS" "$HEIGHT" "$UI_USERS" "$PULLERS")"
+REC_INSTANCE="$(pick_instance_for_vcpu "$REC_VCPU_NEED")"
 REC_ROOT="$(recommend_root_gb "$FEEDS" "$HEIGHT" "$RETENTION_DAYS" "$REC_HOURS_HINT")"
 
 echo
-info "Recommendation for ~${FEEDS} feeds @${HEIGHT}, ${UI_USERS} UI users, ${RETENTION_DAYS}-day retention:"
+info "Workload estimate (~heuristic, not a bench):"
+info "  ${FEEDS} encodes @${HEIGHT}, ${PULLERS} media pullers, ${UI_USERS} UI users"
+info "  Target >= ${REC_VCPU_NEED} vCPU (platform + encodes + pullers + UI + 25% headroom)"
+info "Recommendation from catalog:"
 info "  Instance: ${REC_INSTANCE}  (${EC2_VCPU[$REC_INSTANCE]:-?} vCPU / ${EC2_RAM_GB[$REC_INSTANCE]:-?} GiB)"
 if [[ -n "${EC2_USD_HR[$REC_INSTANCE]+x}" ]]; then
   info "  On-demand: \$${EC2_USD_HR[$REC_INSTANCE]}/hr"
 fi
-info "  Root disk: ${REC_ROOT} GiB gp3"
+info "  Root disk: ${REC_ROOT} GiB gp3 (${RETENTION_DAYS}-day retention hint)"
+if ((${EC2_VCPU[$REC_INSTANCE]:-0} < REC_VCPU_NEED)); then
+  warn "Largest catalog type is still under the estimate — consider custom / contact AWS for bigger."
+fi
 echo
 
 declare -a INST_OPTS=()
-INST_OPTS+=("${REC_INSTANCE} - recommended")
+INST_OPTS+=("${REC_INSTANCE} - recommended (>=${REC_VCPU_NEED} vCPU target)")
 local_note_for() {
   case "$1" in
     c7i.large) echo "smoke / idle only" ;;
     c7i.xlarge) echo "light demos (1-2 @720p)" ;;
     c7i.2xlarge) echo "typical prod (<=4 @720p)" ;;
-    c7i.4xlarge) echo ">4 feeds or several @1080p" ;;
-    c7i.8xlarge) echo "heavy / many encodes" ;;
+    c7i.4xlarge) echo "more feeds / 1080p headroom" ;;
+    c7i.8xlarge) echo "heavy encode load" ;;
+    c7i.12xlarge) echo "very heavy / many 720p encodes" ;;
+    c7i.16xlarge) echo "large fleet of encodes" ;;
+    c7i.24xlarge|c7i.48xlarge) echo "extreme concurrent encodes" ;;
     *) echo "${EC2_VCPU[$1]:-?} vCPU / ${EC2_RAM_GB[$1]:-?} GiB" ;;
   esac
 }
@@ -798,17 +866,19 @@ if [[ "$INSTANCE_TYPE" == "custom" ]]; then
   INSTANCE_TYPE="$(prompt "Instance type" "$REC_INSTANCE")"
 fi
 
-case "$INSTANCE_TYPE" in
-  c7i.large|c7i.xlarge|t3.*|t3a.*)
-    if ((FEEDS >= 2)) || [[ "$FANOUT" == y ]]; then
-      echo
-      warn "Instance $INSTANCE_TYPE is undersized for ~${FEEDS} feeds"
-      [[ "$FANOUT" == y ]] && warn "(and you said yes to heavy stream fan-out)."
-      info "Recommended was ${REC_INSTANCE}. First-boot Docker builds can also OOM on small boxes."
-      confirm_continue "Keep $INSTANCE_TYPE anyway?"
-    fi
-    ;;
-esac
+PICK_V="${EC2_VCPU[$INSTANCE_TYPE]:-0}"
+if ((PICK_V > 0 && PICK_V < REC_VCPU_NEED)); then
+  echo
+  warn "Instance $INSTANCE_TYPE has ${PICK_V} vCPU; workload estimate wants >= ${REC_VCPU_NEED} vCPU."
+  info "Recommended was ${REC_INSTANCE}. Undersizing causes choppy encodes / dropped pulls."
+  confirm_continue "Keep undersized $INSTANCE_TYPE anyway?"
+elif [[ "$INSTANCE_TYPE" == c7i.large || "$INSTANCE_TYPE" == c7i.xlarge ]]; then
+  if ((FEEDS >= 2)) || ((PULLERS >= 20)); then
+    echo
+    warn "Instance $INSTANCE_TYPE is usually too small for video demos with real feeds/pullers."
+    confirm_continue "Keep $INSTANCE_TYPE anyway?"
+  fi
+fi
 
 declare -a DISK_OPTS=("${REC_ROOT} - recommended")
 for s in 80 120 200 300 500; do
