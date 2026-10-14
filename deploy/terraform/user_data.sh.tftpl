@@ -82,6 +82,10 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
     "append_dimensions": {
       "InstanceId": "$${aws:InstanceId}"
     },
+    "aggregation_dimensions": [
+      ["InstanceId"],
+      ["InstanceId", "path"]
+    ],
     "metrics_collected": {
       "mem": {
         "measurement": ["mem_used_percent"]
@@ -92,6 +96,7 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
       "disk": {
         "measurement": ["used_percent"],
         "resources": ["/"],
+        "drop_device": true,
         "ignore_file_system_types": ["sysfs", "devtmpfs", "tmpfs", "overlay", "nsfs"]
       }
     }

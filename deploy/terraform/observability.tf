@@ -317,6 +317,8 @@ resource "aws_cloudwatch_log_metric_filter" "oom" {
 # Host pressure alarms (disk / swap / OOM) → SNS when ops alerts enabled
 # -----------------------------------------------------------------------------
 
+# Classic dimension alarms (SEARCH is not allowed on metric alarms).
+# Disk metrics are aggregated to InstanceId+path by the CW agent config in user_data.
 resource "aws_cloudwatch_metric_alarm" "disk_high" {
   count = local.ops_alerts_enabled ? 1 : 0
 
@@ -324,17 +326,18 @@ resource "aws_cloudwatch_metric_alarm" "disk_high" {
   alarm_description   = "Root disk used >= ${var.disk_alarm_percent}% on ${var.name_prefix}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 2
+  metric_name         = "disk_used_percent"
+  namespace           = "CWAgent"
+  period              = 300
+  statistic           = "Average"
   threshold           = var.disk_alarm_percent
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops_alerts[0].arn]
   ok_actions          = [aws_sns_topic.ops_alerts[0].arn]
 
-  metric_query {
-    id          = "disk"
-    return_data = true
-    period      = 300
-    expression  = "SEARCH('{CWAgent,InstanceId,path,device,fstype} disk_used_percent InstanceId=\"${aws_instance.app.id}\" AND path=\"/\"', 'Average', 300)"
-    label       = "RootDiskUsedPercent"
+  dimensions = {
+    InstanceId = aws_instance.app.id
+    path       = "/"
   }
 
   tags = {
@@ -349,17 +352,17 @@ resource "aws_cloudwatch_metric_alarm" "swap_high" {
   alarm_description   = "Swap used >= ${var.swap_alarm_percent}% (memory pressure / OOM risk) on ${var.name_prefix}"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 2
+  metric_name         = "swap_used_percent"
+  namespace           = "CWAgent"
+  period              = 300
+  statistic           = "Average"
   threshold           = var.swap_alarm_percent
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.ops_alerts[0].arn]
   ok_actions          = [aws_sns_topic.ops_alerts[0].arn]
 
-  metric_query {
-    id          = "swap"
-    return_data = true
-    period      = 300
-    expression  = "SEARCH('{CWAgent,InstanceId} swap_used_percent InstanceId=\"${aws_instance.app.id}\"', 'Average', 300)"
-    label       = "SwapUsedPercent"
+  dimensions = {
+    InstanceId = aws_instance.app.id
   }
 
   tags = {
@@ -501,8 +504,7 @@ resource "aws_cloudwatch_dashboard" "ops" {
           title  = "Disk used % (root)"
           region = var.aws_region
           metrics = [
-            ["CWAgent", "disk_used_percent", "InstanceId", aws_instance.app.id, "path", "/", "fstype", "xfs", { stat = "Average" }],
-            ["CWAgent", "disk_used_percent", "InstanceId", aws_instance.app.id, "path", "/", "fstype", "ext4", { stat = "Average" }],
+            ["CWAgent", "disk_used_percent", "InstanceId", aws_instance.app.id, "path", "/", { stat = "Average" }],
           ]
           period = 300
           view   = "timeSeries"
