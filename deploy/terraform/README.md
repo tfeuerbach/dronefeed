@@ -85,13 +85,21 @@ and `/opt/drone-feed/DEPLOY.txt` on the host.
 
 2. Open `http://<eip>` and sign in with the setup admin.
 
-3. Offline page URL (always up; stopping EC2 does not change DNS):
+3. **Stack / network handoff** (Teams copy/paste — EIP, media ports, offline URL):
+
+   ```bash
+   ./stack-info.sh -p spectre
+   ./stack-info.sh -p spectre --write     # also refresh handoff.txt / handoff.env
+   ./stack-info.sh -p spectre --secrets   # include admin password from local tfvars
+   ```
+
+4. Offline page URL (always up; stopping EC2 does not change DNS):
 
    ```bash
    terraform output -raw maintenance_url
    ```
 
-4. Observability in the AWS console:
+5. Observability in the AWS console:
 
    ```bash
    terraform output -raw ops_dashboard_name
@@ -161,6 +169,8 @@ proxied Cloudflare / UI-CloudFront hostname (HTTP(S) only).
 
 ```bash
 cd deploy/terraform
+./stack-info.sh -p spectre          # full block for Teams
+# or:
 terraform output -raw public_ip
 terraform output -raw maintenance_url
 ```
