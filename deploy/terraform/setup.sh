@@ -425,13 +425,27 @@ apply_smoke_defaults() {
   info "Instance: $INSTANCE_TYPE + ${ROOT_GB} GiB @ $AWS_REGION (name_prefix=$NAME_PREFIX)"
 }
 
-hr() { printf '%s\n' "--------------------------------------------------------"; }
+hr() { printf '%s\n' "========================================================"; }
+hr_soft() { printf '%s\n' "--------------------------------------------------------"; }
 
+# Major wizard step (1/8 … Summary). Extra blank lines so steps don't run together.
 section() {
+  echo
   echo
   hr
   echo " $1"
   hr
+  echo
+}
+
+# Break inside a long section (e.g. region vs sizing questions).
+subsection() {
+  echo
+  echo
+  hr_soft
+  echo " $1"
+  hr_soft
+  echo
 }
 
 info() { printf '  %s\n' "$@"; }
@@ -469,12 +483,15 @@ menu_pick() {
   shift 2
   local -a opts=("$@")
   local i ans mark
+  echo >&2
   echo "$q" >&2
+  echo >&2
   for i in "${!opts[@]}"; do
     mark=" "
     [[ $((i + 1)) -eq "$def" ]] && mark="*"
     printf '  %s%d) %s\n' "$mark" "$((i + 1))" "${opts[$i]}" >&2
   done
+  echo >&2
   while true; do
     read -r -p "  Choice [$def]: " ans || true
     ans="${ans:-$def}"
@@ -688,14 +705,17 @@ cost_lines() {
 # ─── start ───────────────────────────────────────────────────────────────────
 
 echo
+echo
 hr
 echo " DroneFeed - AWS setup wizard"
 hr
+echo
 info "IP-first stack (HTTP on Elastic IP). DNS/HTTPS optional later."
 info "Writes gitignored terraform.tfvars + secrets.auto.tfvars."
 if [[ -n "${AWS_PROFILE:-}" ]]; then
   info "AWS_PROFILE:  $AWS_PROFILE"
 fi
+echo
 echo
 
 need_cmd terraform
@@ -794,6 +814,8 @@ NAME_PREFIX="$(slugify "$(prompt "Resource name_prefix" "$PROJECT")")"
 
 # ── 2 region + workload ──────────────────────────────────────────────────────
 section "2/8  Region + workload sizing"
+
+subsection "Region"
 AWS_REGION="$(pick 1 "AWS region" \
   "us-east-1 - N. Virginia (pricing table below)" \
   "us-east-2 - Ohio" \
@@ -806,34 +828,38 @@ fi
 
 echo
 refresh_ec2_catalog "$AWS_REGION"
-echo
-info "Sizing is DroneFeed-specific: each public feed is a continuous CPU encode."
-info "Website viewers and external video players are lighter but counted separately."
-info "Heuristic picks the smallest c7i in the live catalog with enough vCPU (+~25% headroom)."
-echo
 
+subsection "Public feeds (CPU encodes)"
+info "Each public feed is a continuous CPU encode."
+info "Website viewers and external players are asked next — they are lighter but counted separately."
+echo
 FEEDS="$(prompt "Peak concurrent public feeds (live sessions + VOD republishes encoding at once)" "2")"
 [[ "$FEEDS" =~ ^[0-9]+$ ]] && ((FEEDS >= 1)) || die "feeds must be a positive integer"
 
+echo
 HEIGHT="$(pick 1 "Typical public output resolution" \
   "720 - default CBR-ish encode (recommended)" \
   "1080 - heavier CPU per feed" \
   "source - keep source resolution (highest CPU)")"
 
+subsection "Website viewers"
+info "People with DroneFeed open in a browser (watching in the web UI)."
+info "Do not count VLC / ffplay / SRT tools here — those are the next block."
 echo
-info "Website viewers = people with DroneFeed open in a browser (watching in the web UI)."
-info "Do not count VLC / ffplay / SRT tools here — those are the next question."
 UI_USERS="$(prompt "Peak concurrent website viewers" "5")"
 [[ "$UI_USERS" =~ ^[0-9]+$ ]] || die "website viewers must be an integer"
 
+subsection "External pullers"
+info "Separate apps opening a stream URL (VLC, ffplay, research SRT/RTSP/RTMP tools)."
+info "Count each open stream connection. Website tabs are already counted above."
+info "Leave 0 if nobody pulls outside the browser."
 echo
-info "External pullers = separate apps opening a stream URL (VLC, ffplay, research SRT/RTSP/RTMP tools)."
-info "Count each open stream connection. Website tabs are already counted above — leave 0 if nobody pulls outside the browser."
 PULLERS="$(prompt "Peak concurrent external pullers" "10")"
 [[ "$PULLERS" =~ ^[0-9]+$ ]] || die "external pullers must be an integer"
 FANOUT="n"
 ((PULLERS >= 20)) && FANOUT="y"
 
+subsection "Recording disk"
 RETENTION_DAYS="$(prompt "Recording retention days to size disk for" "5")"
 [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && ((RETENTION_DAYS >= 1)) || die "retention days must be a positive integer"
 
@@ -842,11 +868,12 @@ REC_VCPU_NEED="$(estimate_workload_vcpu "$FEEDS" "$HEIGHT" "$UI_USERS" "$PULLERS
 REC_INSTANCE="$(pick_instance_for_vcpu "$REC_VCPU_NEED")"
 REC_ROOT="$(recommend_root_gb "$FEEDS" "$HEIGHT" "$RETENTION_DAYS" "$REC_HOURS_HINT")"
 
-echo
+subsection "Recommendation"
 info "Workload estimate (~heuristic, not a bench):"
 info "  ${FEEDS} encodes @${HEIGHT}, ${UI_USERS} website viewers, ${PULLERS} external pullers"
 info "  Target >= ${REC_VCPU_NEED} vCPU (platform + encodes + pullers + viewers + 25% headroom)"
-info "Recommendation from catalog:"
+echo
+info "From catalog:"
 info "  Instance: ${REC_INSTANCE}  (${EC2_VCPU[$REC_INSTANCE]:-?} vCPU / ${EC2_RAM_GB[$REC_INSTANCE]:-?} GiB)"
 if [[ -n "${EC2_USD_HR[$REC_INSTANCE]+x}" ]]; then
   info "  On-demand: \$${EC2_USD_HR[$REC_INSTANCE]}/hr"
@@ -855,8 +882,8 @@ info "  Root disk: ${REC_ROOT} GiB gp3 (${RETENTION_DAYS}-day retention hint)"
 if ((${EC2_VCPU[$REC_INSTANCE]:-0} < REC_VCPU_NEED)); then
   warn "Largest catalog type is still under the estimate — consider custom / contact AWS for bigger."
 fi
-echo
 
+subsection "Choose instance + disk + AZ"
 declare -a INST_OPTS=()
 INST_OPTS+=("${REC_INSTANCE} - recommended (>=${REC_VCPU_NEED} vCPU target)")
 local_note_for() {
@@ -902,6 +929,7 @@ elif [[ "$INSTANCE_TYPE" == c7i.large || "$INSTANCE_TYPE" == c7i.xlarge ]]; then
   fi
 fi
 
+echo
 declare -a DISK_OPTS=("${REC_ROOT} - recommended")
 for s in 80 120 200 300 500; do
   [[ "$s" == "$REC_ROOT" ]] && continue
@@ -922,6 +950,7 @@ if ((ROOT_GB < REC_ROOT)); then
   confirm_continue "Keep ${ROOT_GB} GiB anyway?"
 fi
 
+echo
 # AZ must be blank (Terraform picks first) or a real zone letter, never the region alone.
 AZ=""
 while true; do
@@ -967,6 +996,8 @@ PUBLIC_KEY=""
 KEY_NAME=""
 ENABLE_SSM="true"
 
+subsection "SSH key"
+
 DEFAULT_PUB=""
 for cand in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub"; do
   if [[ -f "$cand" ]]; then DEFAULT_PUB="$cand"; break; fi
@@ -1011,14 +1042,16 @@ case "$SSH_MODE" in
 esac
 [[ -n "$PUBLIC_KEY" ]] || die "a login key is required so you can reach the server"
 
-echo
+subsection "Backup login (SSM)"
 info "AWS Session Manager is a backup way to open a shell in the AWS console"
 info "if SSH is blocked (no extra key needed). Recommended: yes."
+echo
 prompt_yn "Enable that backup login (SSM)?" y || ENABLE_SSM="false"
 
-echo
+subsection "Who can reach the server"
 info "Who is allowed to SSH (terminal login) to the server?"
 info "Recommended: only your current internet connection."
+echo
 SSH_WHO="$(pick 1 "Who can SSH in?" \
   "only-me - just my current public IP (safer)" \
   "anyone - any address on the internet (ok for a short lab test)" \
@@ -1043,6 +1076,7 @@ esac
 echo
 info "Who can open the website and pull video (ports 80/443 and media)?"
 info "For research viewers on the internet, leave this open."
+echo
 if prompt_yn "Allow the website and video ports from the whole internet?" y; then
   MEDIA_CIDR="0.0.0.0/0"
 else
@@ -1052,6 +1086,7 @@ fi
 # ── 4 admin ──────────────────────────────────────────────────────────────────
 section "4/8  Admin login (printed after apply)"
 ADMIN_EMAIL="$(prompt "Admin email" "admin@dronefeed.local")"
+echo
 DEFAULT_ADMIN_PW="$(gen_admin_password)"
 info "Generated admin password: $DEFAULT_ADMIN_PW"
 if prompt_yn "Use this generated password?" y; then
@@ -1067,19 +1102,26 @@ fi
 # ── 5 repo ───────────────────────────────────────────────────────────────────
 section "5/8  Repo bootstrap on the instance"
 info "Instance clones this ref on first boot - push your changes before apply."
+echo
 GIT_REPO="$(prompt "Git clone URL" "https://github.com/tfeuerbach/dronefeed.git")"
+echo
 GIT_REF="$(prompt "Git branch or tag (needs Caddyfile.http + runtime PHX_SCHEME/force_ssl)" "master")"
+echo
 DEPLOY_USER="$(prompt "Linux deploy user" "dronefeed")"
 
 # ── 6 email / EIP ────────────────────────────────────────────────────────────
 section "6/8  Email + Elastic IP"
+
+subsection "App email (SES)"
 ENABLE_SES="false"
 prompt_yn "Attach SES send policy / plan to use outbound email later (app SMTP)?" n && ENABLE_SES="true"
 
+subsection "Operator alerts (SNS)"
 ENABLE_OPS_ALERTS="false"
 OPS_ALERT_EMAIL=""
 MONTHLY_BUDGET_USD=500
 info "Operator alerts use SNS (no SES): schedule, budget, disk, swap pressure, OOM."
+echo
 if prompt_yn "Enable operator email alerts (SNS)?" y; then
   ENABLE_OPS_ALERTS="true"
   OPS_ALERT_EMAIL="$(prompt "Alert email inbox" "$ADMIN_EMAIL")"
@@ -1089,6 +1131,7 @@ if prompt_yn "Enable operator email alerts (SNS)?" y; then
   info "After apply: Confirm the AWS SNS subscription email, then setup sends a bootstrap mail."
 fi
 
+subsection "Elastic IP"
 ASSOCIATE_EIP="true"
 prompt_yn "Allocate Elastic IP (recommended for IP-first)?" y || ASSOCIATE_EIP="false"
 
@@ -1105,7 +1148,9 @@ MAINT_SESSION_TOKEN=""
 
 if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
   ENABLE_MAINTENANCE="true"
+  echo
   info "Offline HTML lives in S3; CloudFront serves it when you wire DNS failover later."
+  echo
   if prompt_yn "Create a new S3 bucket for the offline page?" y; then
     MAINT_CREATE="true"
     MAINT_BUCKET="$(prompt_s3_bucket_name "New bucket name (blank = ${NAME_PREFIX}-after-hours-<account_id>)" "")"
@@ -1116,6 +1161,7 @@ if prompt_yn "Set up the offline/maintenance page (S3 + CloudFront)?" y; then
     info "Terraform will set this buckets policy for CloudFront OAC (replaces bucket policy)."
   fi
 
+  echo
   if prompt_yn "Is that bucket in the same AWS account as this EC2 stack?" y; then
     MAINT_SAME_ACCOUNT="true"
     MAINT_BUCKET_REGION="$(prompt "Bucket region (blank = same as EC2 region $AWS_REGION)" "")"
@@ -1142,8 +1188,11 @@ SCHEDULE_START=8
 SCHEDULE_STOP=18
 if prompt_yn "Auto start/stop EC2 on weekdays (saves money off-hours)?" y; then
   ENABLE_SCHEDULE="true"
+  echo
   SCHEDULE_TZ="$(prompt "Timezone (IANA)" "America/New_York")"
+  echo
   SCHEDULE_START="$(prompt "Start hour Mon-Fri (0-23, local)" "8")"
+  echo
   SCHEDULE_STOP="$(prompt "Stop hour Mon-Fri (0-23, local)" "18")"
   [[ "$SCHEDULE_START" =~ ^[0-9]+$ && "$SCHEDULE_STOP" =~ ^[0-9]+$ ]] || die "hours must be integers"
   ((SCHEDULE_START >= 0 && SCHEDULE_START <= 23)) || die "start hour out of range"

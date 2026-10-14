@@ -332,6 +332,7 @@ resource "aws_cloudwatch_metric_alarm" "disk_high" {
   metric_query {
     id          = "disk"
     return_data = true
+    period      = 300
     expression  = "SEARCH('{CWAgent,InstanceId,path,device,fstype} disk_used_percent InstanceId=\"${aws_instance.app.id}\" AND path=\"/\"', 'Average', 300)"
     label       = "RootDiskUsedPercent"
   }
@@ -356,6 +357,7 @@ resource "aws_cloudwatch_metric_alarm" "swap_high" {
   metric_query {
     id          = "swap"
     return_data = true
+    period      = 300
     expression  = "SEARCH('{CWAgent,InstanceId} swap_used_percent InstanceId=\"${aws_instance.app.id}\"', 'Average', 300)"
     label       = "SwapUsedPercent"
   }
