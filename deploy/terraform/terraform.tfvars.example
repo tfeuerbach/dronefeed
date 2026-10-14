@@ -29,8 +29,17 @@ git_ref      = "master" # must include Caddyfile.http + runtime PHX_SCHEME/force
 # admin_password = "…"  # in secrets.auto.tfvars
 
 enable_ssm           = true
-enable_ses_send      = false # no outbound email by default
+enable_ses_send      = false # app SMTP policy; separate from SNS ops alerts
 associate_elastic_ip = true
+
+# SNS operator alerts (schedule miss / on-too-long / monthly budget) + setup.sh bootstrap mail.
+# Confirm the AWS subscription email once after apply.
+# enable_ops_alerts  = true
+# ops_alert_email    = "you@example.com"
+# monthly_budget_usd = 500
+
+# CloudWatch Logs retention for Compose services (dashboard always created).
+# log_retention_days = 14
 
 # After-hours offline page (S3 + CloudFront).
 # enable_maintenance_static       = true
@@ -39,7 +48,7 @@ associate_elastic_ip = true
 # maintenance_bucket_same_account = true
 # maintenance_bucket_region       = ""
 
-# Weekday auto start/stop (default on: 8→18 local). After-hours: ./wake.sh 4|8|12|24
+# Weekday auto start/stop (default on: 8→18 local). After-hours: ./wake.sh 4|8|12
 enable_business_hours_schedule = true
 schedule_timezone              = "America/New_York"
 schedule_start_hour            = 8

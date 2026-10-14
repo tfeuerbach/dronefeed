@@ -109,7 +109,8 @@ See **[terraform/README.md](./terraform/README.md)**: push your branch/tag, then
 `cd deploy/terraform && ./setup.sh -s -p <profile>` (smoke) or `./setup.sh -p
 <profile>` (guided). Tear down with `./destroy.sh -p <profile>`. App at
 `http://<elastic-ip>`. Admin credentials print at the end of setup and on the
-host in `/opt/drone-feed/DEPLOY.txt`.
+host in `/opt/drone-feed/DEPLOY.txt`. Optional SNS ops alerts (schedule/budget)
+and a CloudWatch `*-ops` dashboard + Compose log groups are documented there.
 
 - Migrations + optional admin bootstrap run via `deploy/entrypoint.sh`
 - Certs live in the `caddy_data` volume and renew automatically

@@ -117,7 +117,10 @@ resource "aws_s3_bucket" "maintenance" {
   bucket   = local.maintenance_bucket_name
 
   tags = {
-    Name = "${var.name_prefix}-after-hours"
+    Name        = "${var.name_prefix}-after-hours"
+    Project     = lookup(var.tags, "Project", "dronefeed")
+    Environment = lookup(var.tags, "Environment", "prod")
+    ManagedBy   = "terraform"
   }
 }
 
@@ -200,7 +203,10 @@ resource "aws_cloudfront_distribution" "maintenance" {
   }
 
   tags = {
-    Name = "${var.name_prefix}-after-hours"
+    Name        = "${var.name_prefix}-after-hours"
+    Project     = lookup(var.tags, "Project", "dronefeed")
+    Environment = lookup(var.tags, "Environment", "prod")
+    ManagedBy   = "terraform"
   }
 
   depends_on = [aws_s3_bucket_public_access_block.maintenance]

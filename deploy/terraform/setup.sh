@@ -418,6 +418,10 @@ apply_smoke_defaults() {
   SCHEDULE_START=8
   SCHEDULE_STOP=18
 
+  ENABLE_OPS_ALERTS="false"
+  OPS_ALERT_EMAIL=""
+  MONTHLY_BUDGET_USD=50
+
   info "Instance: $INSTANCE_TYPE + ${ROOT_GB} GiB @ $AWS_REGION (name_prefix=$NAME_PREFIX)"
 }
 
@@ -744,6 +748,19 @@ declare -a EXTRA_VALS=()
 
 if [[ "$SMOKE" == true ]]; then
   apply_smoke_defaults
+  section "Smoke — operator email (optional)"
+  info "SNS only: schedule miss / on-too-long / budget + one bootstrap mail after apply."
+  info "You must Confirm the AWS subscription email before the bootstrap message arrives."
+  ENABLE_OPS_ALERTS="false"
+  OPS_ALERT_EMAIL=""
+  MONTHLY_BUDGET_USD=50
+  if prompt_yn "Test operator email alerts on this smoke stack?" n; then
+    ENABLE_OPS_ALERTS="true"
+    OPS_ALERT_EMAIL="$(prompt "Alert email inbox" "${ADMIN_EMAIL}")"
+    [[ -n "$OPS_ALERT_EMAIL" ]] || die "alert email required when testing ops alerts"
+    MONTHLY_BUDGET_USD="$(prompt "Monthly budget USD (smoke default 50)" "50")"
+    [[ "$MONTHLY_BUDGET_USD" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "monthly budget must be a number"
+  fi
 else
 
 # ── 1 tags ───────────────────────────────────────────────────────────────────
@@ -1052,7 +1069,20 @@ DEPLOY_USER="$(prompt "Linux deploy user" "dronefeed")"
 # ── 6 email / EIP ────────────────────────────────────────────────────────────
 section "6/8  Email + Elastic IP"
 ENABLE_SES="false"
-prompt_yn "Attach SES send policy / plan to use outbound email later?" n && ENABLE_SES="true"
+prompt_yn "Attach SES send policy / plan to use outbound email later (app SMTP)?" n && ENABLE_SES="true"
+
+ENABLE_OPS_ALERTS="false"
+OPS_ALERT_EMAIL=""
+MONTHLY_BUDGET_USD=500
+info "Operator alerts use SNS (no SES): schedule miss, on-too-long, monthly budget."
+if prompt_yn "Enable operator email alerts (SNS)?" y; then
+  ENABLE_OPS_ALERTS="true"
+  OPS_ALERT_EMAIL="$(prompt "Alert email inbox" "$ADMIN_EMAIL")"
+  [[ -n "$OPS_ALERT_EMAIL" ]] || die "alert email required when ops alerts are enabled"
+  MONTHLY_BUDGET_USD="$(prompt "Monthly AWS budget USD" "500")"
+  [[ "$MONTHLY_BUDGET_USD" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "monthly budget must be a number"
+  info "After apply: Confirm the AWS SNS subscription email, then setup sends a bootstrap mail."
+fi
 
 ASSOCIATE_EIP="true"
 prompt_yn "Allocate Elastic IP (recommended for IP-first)?" y || ASSOCIATE_EIP="false"
@@ -1185,6 +1215,12 @@ fi
   echo "schedule_start_hour            = $SCHEDULE_START"
   echo "schedule_stop_hour             = $SCHEDULE_STOP"
   echo
+  echo "enable_ops_alerts  = $ENABLE_OPS_ALERTS"
+  if [[ "$ENABLE_OPS_ALERTS" == true ]]; then
+    echo "ops_alert_email    = $(hcl_str "$OPS_ALERT_EMAIL")"
+    echo "monthly_budget_usd = $MONTHLY_BUDGET_USD"
+  fi
+  echo
   echo "tags = {"
   echo "  Project     = $(hcl_str "$PROJECT")"
   echo "  Environment = $(hcl_str "$ENVIRONMENT")"
@@ -1233,7 +1269,12 @@ info "Project=$PROJECT  Environment=$ENVIRONMENT  name_prefix=$NAME_PREFIX"
 info "Workload: ${FEEDS} feeds @${HEIGHT}, ${UI_USERS} UI users, retain ${RETENTION_DAYS}d"
 info "Compute:  $INSTANCE_TYPE + ${ROOT_GB} GiB gp3 @ $AWS_REGION"
 info "Admin:    $ADMIN_EMAIL"
-info "SES/email: $ENABLE_SES"
+info "SES (app SMTP policy): $ENABLE_SES"
+if [[ "$ENABLE_OPS_ALERTS" == true ]]; then
+  info "Ops alerts (SNS): $OPS_ALERT_EMAIL  budget=${MONTHLY_BUDGET_USD} USD/mo"
+else
+  info "Ops alerts (SNS): disabled"
+fi
 if [[ "$ENABLE_SCHEDULE" == true ]]; then
   info "Schedule: Mon-Fri ${SCHEDULE_START}:00->${SCHEDULE_STOP}:00 $SCHEDULE_TZ"
 else
@@ -1281,6 +1322,133 @@ run_tf_plan() {
   terraform plan -out=tfplan
   echo
   info "Done: terraform plan."
+}
+
+# Wait for SNS email subscription Confirm, then publish a one-shot bootstrap message.
+publish_ops_bootstrap_email() {
+  local topic_arn sub_arn pending deadline now state subject body
+  local public_ip app_url instance_id region name_prefix dash_name log_prefix
+  local instance_state instance_type schedule_line
+
+  [[ "${ENABLE_OPS_ALERTS:-false}" == true ]] || return 0
+
+  topic_arn="$(terraform output -raw ops_alerts_topic_arn 2>/dev/null || true)"
+  [[ -n "$topic_arn" && "$topic_arn" != "null" ]] || {
+    warn "ops alerts enabled but ops_alerts_topic_arn missing — skip bootstrap email"
+    return 0
+  }
+
+  section "Ops alert email — confirm SNS subscription"
+  info "AWS sent a Confirm subscription email to: ${OPS_ALERT_EMAIL}"
+  info "Open that mail and click Confirm before the bootstrap message can be delivered."
+  echo
+
+  deadline=$((SECONDS + 600))
+  pending=true
+  while ((SECONDS < deadline)); do
+    state="$(aws sns list-subscriptions-by-topic --topic-arn "$topic_arn" \
+      --query "Subscriptions[?Endpoint=='${OPS_ALERT_EMAIL}'].SubscriptionArn | [0]" \
+      --output text 2>/dev/null || true)"
+    if [[ -n "$state" && "$state" != "None" && "$state" != "PendingConfirmation" && "$state" != "null" ]]; then
+      pending=false
+      sub_arn="$state"
+      break
+    fi
+    if [[ "$YES" == true ]]; then
+      sleep 10
+      continue
+    fi
+    if prompt_yn "Confirmed the SNS subscription email? (re-check now)" n; then
+      sleep 2
+      continue
+    fi
+    if prompt_yn "Skip bootstrap email for now?" n; then
+      warn "Skipped bootstrap email — subscription still pending or not confirmed."
+      info "After Confirm: aws sns publish --topic-arn ${topic_arn} --subject 'DroneFeed ops alerts' --message 'Subscription confirmed.'"
+      return 0
+    fi
+    sleep 5
+  done
+
+  if [[ "$pending" == true ]]; then
+    warn "SNS subscription still pending — bootstrap email not sent."
+    info "After you Confirm, publish manually:"
+    info "  aws sns publish --topic-arn ${topic_arn} --subject 'DroneFeed ops alerts' --message 'Subscription confirmed.'"
+    return 0
+  fi
+
+  public_ip="$(terraform output -raw public_ip 2>/dev/null || true)"
+  app_url="$(terraform output -raw app_url 2>/dev/null || true)"
+  instance_id="$(terraform output -raw instance_id 2>/dev/null || true)"
+  region="$(terraform output -raw aws_region 2>/dev/null || true)"
+  name_prefix="$(terraform output -raw name_prefix 2>/dev/null || true)"
+  dash_name="$(terraform output -raw ops_dashboard_name 2>/dev/null || true)"
+  log_prefix="$(terraform output -raw ops_log_group_prefix 2>/dev/null || true)"
+
+  instance_state="$(aws ec2 describe-instances --instance-ids "$instance_id" \
+    --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null || echo unknown)"
+  instance_type="$(aws ec2 describe-instances --instance-ids "$instance_id" \
+    --query 'Reservations[0].Instances[0].InstanceType' --output text 2>/dev/null || echo unknown)"
+
+  if [[ "${ENABLE_SCHEDULE:-false}" == true ]]; then
+    schedule_line="Weekday power: Mon–Fri ${SCHEDULE_START}:00→${SCHEDULE_STOP}:00 ${SCHEDULE_TZ} (checks ~15m after start/stop)."
+  else
+    schedule_line="Weekday power schedule: disabled (no schedule-miss emails)."
+  fi
+
+  if [[ "$SMOKE" == true ]]; then
+    subject="[${name_prefix}] Smoke stack alerts wired"
+    body="$(cat <<EOF
+DroneFeed smoke-test bootstrap (ops email path works).
+
+Stack:       ${name_prefix}
+Region:      ${region}
+Instance:    ${instance_id} (${instance_type}) state=${instance_state}
+Public IP:   ${public_ip}
+App URL:     ${app_url}
+
+This is a smoke stack — tear down when done:
+  cd deploy/terraform && ./destroy.sh
+
+You should only receive further mail if a schedule check or budget threshold fires
+during the smoke window (usually none). Console (not emailed): CloudWatch dashboard
+${dash_name}, log groups under ${log_prefix}/
+EOF
+)"
+  else
+    subject="[${name_prefix}] Ops alerts active"
+    body="$(cat <<EOF
+DroneFeed ops alerts are active for this stack.
+
+EC2 / heartbeat (at apply time)
+  Instance:  ${instance_id} (${instance_type})
+  State:     ${instance_state}
+  Public IP: ${public_ip}
+  App URL:   ${app_url}
+  Region:    ${region}
+
+${schedule_line}
+Monthly budget: ${MONTHLY_BUDGET_USD} USD (SNS at 80% and 100% actual).
+
+Going forward you will get email ONLY for:
+  • Weekday start miss (instance not running ~15m after start)
+  • Weekday stop miss / on too long (still running ~15m after stop)
+  • Monthly budget thresholds (80% / 100%)
+
+Not emailed (console only):
+  CloudWatch dashboard: ${dash_name}
+  Log groups:           ${log_prefix}/{web,caddy,mediamtx,db,bootstrap}
+EOF
+)"
+  fi
+
+  info "Publishing bootstrap email to SNS…"
+  aws sns publish \
+    --topic-arn "$topic_arn" \
+    --subject "$(printf '%s' "$subject" | cut -c1-100)" \
+    --message "$body" >/dev/null
+  info "Bootstrap email published (check ${OPS_ALERT_EMAIL})."
+  echo
 }
 
 # Print + write copy-pastable values for whoever owns DNS / edge in front of this box.
@@ -1424,12 +1592,14 @@ run_tf_apply() {
   info "Done: terraform apply."
   echo
   print_handoff
+  publish_ops_bootstrap_email
   if [[ "$SMOKE" == true ]]; then
     echo "Smoke test: wait for Docker build, open App URL, then destroy:"
-    echo "  cd $ROOT && terraform destroy"
+    echo "  cd $ROOT && ./destroy.sh"
   else
     echo "Wait a few minutes for the first Docker build, then open the App URL."
-    echo "After-hours test window: ./wake.sh 4|8|12|24"
+    echo "CloudWatch dashboard: terraform output -raw ops_dashboard_name"
+    echo "After-hours test window: ./wake.sh 4|8|12"
   fi
   echo
 }

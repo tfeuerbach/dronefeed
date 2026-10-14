@@ -242,6 +242,7 @@ resource "time_sleep" "iam_propagation" {
     aws_iam_instance_profile.ec2,
     aws_iam_role_policy_attachment.ssm,
     aws_iam_role_policy.ses_send,
+    aws_iam_role_policy.cw_agent,
   ]
 
   create_duration = "15s"
@@ -313,6 +314,7 @@ resource "aws_instance" "app" {
     git_ref                = var.git_ref
     deploy_user            = var.deploy_user
     name_prefix            = var.name_prefix
+    aws_region             = var.aws_region
     ssh_authorized_key_b64 = base64encode(var.ssh_authorized_key != "" ? var.ssh_authorized_key : var.public_key)
     admin_email_b64        = base64encode(var.admin_email)
     admin_password_b64     = base64encode(var.admin_password)

@@ -29,7 +29,8 @@ Usage: ./destroy.sh [options]
 What this removes (everything in local terraform state):
   - EC2 instance, ENI, Elastic IP, security group, subnet, VPC, IGW
   - Weekday EventBridge Scheduler start/stop (+ wake one-shots if present)
-  - IAM roles/profiles created for the instance / scheduler / optional SES
+  - Ops SNS / budget / schedule-check Lambda / CloudWatch dashboard + log groups
+  - IAM roles/policies for the instance / scheduler / CW agent / optional SES
   - Offline-page S3 bucket + CloudFront distribution (if enabled at apply)
 
 What this does NOT remove:

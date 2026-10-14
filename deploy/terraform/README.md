@@ -1,7 +1,8 @@
 # DroneFeed AWS Terraform
 
 IP-first host: VPC, EC2, Elastic IP, Docker Compose on plain HTTP, weekday
-power schedule (Mon–Fri 8:00–18:00 local), and an S3 + CloudFront offline page.
+power schedule (Mon–Fri 8:00–18:00 local), S3 + CloudFront offline page,
+CloudWatch logs/dashboard, and optional SNS operator email alerts.
 No Route 53, ACM, or domain is created here.
 
 | | |
@@ -10,7 +11,8 @@ No Route 53, ACM, or domain is created here.
 | SSH | `dronefeed` + key from setup (passwordless sudo) |
 | Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12` (max 12h) |
 | Offline page | `terraform output -raw maintenance_url` |
-| Email | Off by default |
+| Ops email | Optional SNS (schedule miss / on-too-long / budget) |
+| Console | CloudWatch dashboard `*-ops` + log groups `/{name_prefix}/*` |
 
 ## Prerequisites
 
@@ -54,19 +56,24 @@ If STS fails with an SSO profile, run `aws sso login --profile <name>` and retry
 
 Smoke uses `name_prefix=dronefeed-smoke`. Tear down with [`./destroy.sh`](#destroy) when done.
 
-Guided flow: tags → workload sizing → SSH → admin → repo → email/EIP → offline
-page → schedule → init/plan/apply. Instance type and disk you pick are what
-apply creates. `./setup.sh` loads live `c7i` types and on-demand/gp3 prices for
-the region (Pricing API); estimates only — egress not included.
+Guided flow: tags → workload sizing → SSH → admin → repo → email/EIP (SES
+optional + **SNS ops alerts**) → offline page → schedule → init/plan/apply.
+Smoke asks separately whether to test ops email. Instance type and disk you
+pick are what apply creates. `./setup.sh` loads live `c7i` types and
+on-demand/gp3 prices for the region (Pricing API); estimates only — egress not
+included.
 
 Writes gitignored `terraform.tfvars` + `secrets.auto.tfvars`, and an SSH key
-(`~/.ssh/*.pub` or `keys/`). Defaults: schedule on, EIP on, SES off, maintenance
-page on (new bucket, same account).
+(`~/.ssh/*.pub` or `keys/`). Defaults: schedule on, EIP on, SES off, SNS ops
+alerts on in guided / off in smoke unless you opt in, maintenance page on
+(new bucket, same account).
 
 Apply prints operator login plus a copy-pastable **network handoff** block
 (public IP, HTTP origin, media ports, offline CloudFront URL) and writes
-gitignored `handoff.txt` / `handoff.env`. Admin credentials also live in
-`secrets.auto.tfvars` and `/opt/drone-feed/DEPLOY.txt` on the host.
+gitignored `handoff.txt` / `handoff.env`. When ops alerts are enabled, confirm
+the AWS SNS subscription email, then setup publishes a bootstrap message
+(smoke vs prod wording). Admin credentials also live in `secrets.auto.tfvars`
+and `/opt/drone-feed/DEPLOY.txt` on the host.
 
 ## After apply
 
@@ -83,6 +90,35 @@ gitignored `handoff.txt` / `handoff.env`. Admin credentials also live in
    ```bash
    terraform output -raw maintenance_url
    ```
+
+4. Observability in the AWS console:
+
+   ```bash
+   terraform output -raw ops_dashboard_name
+   terraform output -raw ops_log_group_prefix
+   ```
+
+   Dashboard: EC2 CPU / status checks / network, host mem & disk (CloudWatch
+   Agent), and recent `web` / `mediamtx` / `caddy` / `db` / bootstrap logs.
+   Log groups: `/{name_prefix}/{web,caddy,mediamtx,db,bootstrap}` (14-day
+   retention). Compose uses the `awslogs` driver via
+   `docker-compose.logging.yml` on first boot.
+
+## Operator email (SNS)
+
+Optional. Not SES — no SMTP identity required.
+
+| Mail | When |
+|------|------|
+| AWS “Confirm subscription” | Once, right after apply |
+| Bootstrap (from `setup.sh`) | After you Confirm — smoke vs guided text |
+| Schedule miss | Weekday ~15m after start; instance not `running` |
+| On too long | Weekday ~15m after stop; instance still up |
+| Budget | 80% / 100% of monthly USD actual |
+
+Guided defaults alerts **on**; smoke asks “Test operator email alerts?”
+(**off** by default). Set in tfvars: `enable_ops_alerts`, `ops_alert_email`,
+`monthly_budget_usd`.
 
 ## After-hours wake
 
@@ -192,7 +228,8 @@ Disk: 80–200+ GiB gp3 from retention (wizard estimates from feeds × hours × 
 ## Not included
 
 - Domains / Route 53 / ACM (Path 1 or 2 above)
-- SES identity verification
+- SES identity verification (app SMTP is separate from SNS ops alerts)
+- Per-container / CVE / ingest email storms
 - Remote Terraform state (keep `terraform.tfstate` safe)
 
 ## Constraints
@@ -220,7 +257,8 @@ cd deploy/terraform
 3. Run `terraform destroy` (with `-auto-approve` if `-y`)
 
 **Removes:** EC2, ENI, EIP, VPC/subnet/SG/IGW, weekday schedulers (and wake
-one-shots), IAM roles/profiles this stack created, offline S3 + CloudFront if
+one-shots), SNS/budget/schedule-check Lambda, CloudWatch dashboard + log
+groups, IAM roles/profiles this stack created, offline S3 + CloudFront if
 they were enabled.
 
 **Does not remove:** DNS / UI CloudFront / Lambda@Edge / ACM you created in

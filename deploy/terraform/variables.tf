@@ -207,6 +207,45 @@ variable "schedule_stop_hour" {
   }
 }
 
+variable "enable_ops_alerts" {
+  description = "SNS email for schedule miss / on-too-long / monthly budget, plus bootstrap mail from setup.sh."
+  type        = bool
+  default     = false
+}
+
+variable "ops_alert_email" {
+  description = "Operator inbox for SNS ops alerts (must Confirm the AWS subscription email once)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_ops_alerts || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.ops_alert_email))
+    error_message = "ops_alert_email must be a valid email when enable_ops_alerts is true."
+  }
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD). SNS notifies at 80% and 100% when ops alerts are enabled."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.monthly_budget_usd >= 1
+    error_message = "monthly_budget_usd must be at least 1."
+  }
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention for Compose service log groups."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.log_retention_days)
+    error_message = "log_retention_days must be a CloudWatch Logs allowed retention value."
+  }
+}
+
 variable "tags" {
   description = "Extra tags applied to all resources."
   type        = map(string)

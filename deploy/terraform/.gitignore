@@ -18,4 +18,5 @@ terraform.tfvars.bak.*
 keys/
 handoff.env
 handoff.txt
+.build/
 # Keep .terraform.lock.hcl in git for reproducible provider versions.

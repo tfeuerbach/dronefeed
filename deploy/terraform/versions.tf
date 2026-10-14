@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/time"
       version = ">= 0.9"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = ">= 2.4"
+    }
   }
 }
 
@@ -35,4 +39,14 @@ provider "aws" {
   access_key = var.maintenance_bucket_same_account ? null : var.maintenance_bucket_access_key
   secret_key = var.maintenance_bucket_same_account ? null : var.maintenance_bucket_secret_key
   token      = var.maintenance_bucket_same_account || var.maintenance_bucket_session_token == "" ? null : var.maintenance_bucket_session_token
+
+  default_tags {
+    tags = merge(
+      {
+        Project   = "dronefeed"
+        ManagedBy = "terraform"
+      },
+      var.tags
+    )
+  }
 }

@@ -89,6 +89,10 @@ output "next_steps" {
     Hostname offline failover: Path 1 Cloudflare or Path 2 Route 53 in README.
     ${var.enable_maintenance_static ? "\nOffline page preview: https://${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html" : ""}
     ${var.enable_business_hours_schedule ? "\nBusiness hours: auto-start ${var.schedule_start_hour}:00 / stop ${var.schedule_stop_hour}:00 ${var.schedule_timezone} Mon–Fri." : ""}
+    ${var.enable_ops_alerts ? "\nOps email: ${var.ops_alert_email} (Confirm SNS subscription). Budget ${var.monthly_budget_usd} USD/mo." : ""}
+
+    Console: CloudWatch dashboard ${aws_cloudwatch_dashboard.ops.dashboard_name}
+    Logs:    /${var.name_prefix}/{web,caddy,mediamtx,db,bootstrap}
   EOT
 }
 
@@ -144,4 +148,29 @@ output "maintenance_cloudfront_domain" {
 output "maintenance_url" {
   description = "HTTPS URL of the seeded after-hours index.html (null if disabled)."
   value       = var.enable_maintenance_static ? "https://${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html" : null
+}
+
+output "ops_alerts_enabled" {
+  description = "Whether SNS ops email alerts are enabled."
+  value       = var.enable_ops_alerts
+}
+
+output "ops_alerts_topic_arn" {
+  description = "SNS topic ARN for ops alerts (null if disabled)."
+  value       = var.enable_ops_alerts ? aws_sns_topic.ops_alerts[0].arn : null
+}
+
+output "ops_alert_email" {
+  description = "Operator email subscribed to ops alerts (null if disabled)."
+  value       = var.enable_ops_alerts ? var.ops_alert_email : null
+}
+
+output "ops_dashboard_name" {
+  description = "CloudWatch dashboard name for EC2 / network / container logs."
+  value       = aws_cloudwatch_dashboard.ops.dashboard_name
+}
+
+output "ops_log_group_prefix" {
+  description = "CloudWatch Logs prefix for Compose services (/{name_prefix}/…)."
+  value       = "/${var.name_prefix}"
 }
