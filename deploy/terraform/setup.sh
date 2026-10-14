@@ -785,7 +785,7 @@ else
 
 # ── 1 tags ───────────────────────────────────────────────────────────────────
 section "1/8  Project identity (tags - editable later via tfvars + apply)"
-PROJECT="$(prompt "Project tag" "dronefeed")"
+PROJECT="$(prompt "Project tag" "spectre")"
 ENVIRONMENT="$(pick 1 "Environment tag" "prod" "staging" "test" "dev")"
 OWNER=""
 COST_CENTER=""

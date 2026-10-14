@@ -70,14 +70,15 @@ EOF
 
 B64="$(base64 -w0 <"$CFG" 2>/dev/null || base64 <"$CFG" | tr -d '\n')"
 
-echo "Updating CloudWatch Agent on $INSTANCE_ID…"
+echo "Updating CloudWatch Agent on $INSTANCE_ID (rsyslog → /var/log/messages for OOM)…"
+# shellcheck disable=SC2016
 CMD_ID="$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --comment "DroneFeed CW Agent disk/swap aggregation" \
-  --parameters "{\"commands\":[\"set -euxo pipefail\",\"echo ${B64} | base64 -d >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json\",\"/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json\"]}" \
+  --comment "DroneFeed CW Agent + rsyslog for /var/log/messages" \
+  --parameters "{\"commands\":[\"set -euxo pipefail\",\"dnf -y install rsyslog\",\"systemctl enable --now rsyslog\",\"test -f /var/log/messages\",\"echo ${B64} | base64 -d >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json\",\"/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json\",\"sleep 2\",\"systemctl is-active amazon-cloudwatch-agent\",\"ls -la /var/log/messages\"]}" \
   --query 'Command.CommandId' \
   --output text)"
 
 echo "SSM CommandId: $CMD_ID"
-echo "Wait ~1–2 min for metrics (InstanceId + path=/), then disk/swap alarms can fire."
+echo "Wait ~1–2 min for /dronefeed/system streams, then OOM filter can see kernel lines."

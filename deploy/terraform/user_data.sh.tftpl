@@ -21,7 +21,9 @@ AWS_REGION="${aws_region}"
 NAME_PREFIX="${name_prefix}"
 
 dnf -y update
-dnf -y install docker git openssl python3 dnf-automatic amazon-cloudwatch-agent
+# rsyslog: AL2023 is journald-only by default; CW Agent + OOM filter need /var/log/messages.
+dnf -y install docker git openssl python3 dnf-automatic amazon-cloudwatch-agent rsyslog
+systemctl enable --now rsyslog
 
 # AL2023 AMIs lock to a repo snapshot; without this, dnf-automatic never sees
 # newer security advisories. Fine for a single long-lived niche host.

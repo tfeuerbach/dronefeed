@@ -7,7 +7,7 @@ instance_type = "c7i.2xlarge" # c7i.4xlarge+ for >4 public feeds
 root_volume_gb = 80
 
 tags = {
-  Project     = "dronefeed"
+  Project     = "spectre"
   Environment = "prod"
   # Owner       = "platform@example.com"
   # CostCenter  = "research"

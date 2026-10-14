@@ -23,7 +23,7 @@ provider "aws" {
   default_tags {
     tags = merge(
       {
-        Project   = "dronefeed"
+        Project   = "spectre"
         ManagedBy = "terraform"
       },
       var.tags
@@ -43,7 +43,7 @@ provider "aws" {
   default_tags {
     tags = merge(
       {
-        Project   = "dronefeed"
+        Project   = "spectre"
         ManagedBy = "terraform"
       },
       var.tags

@@ -118,7 +118,7 @@ resource "aws_s3_bucket" "maintenance" {
 
   tags = {
     Name        = "${var.name_prefix}-after-hours"
-    Project     = lookup(var.tags, "Project", "dronefeed")
+    Project     = lookup(var.tags, "Project", "spectre")
     Environment = lookup(var.tags, "Environment", "prod")
     ManagedBy   = "terraform"
   }
@@ -204,7 +204,7 @@ resource "aws_cloudfront_distribution" "maintenance" {
 
   tags = {
     Name        = "${var.name_prefix}-after-hours"
-    Project     = lookup(var.tags, "Project", "dronefeed")
+    Project     = lookup(var.tags, "Project", "spectre")
     Environment = lookup(var.tags, "Environment", "prod")
     ManagedBy   = "terraform"
   }
