@@ -68,10 +68,12 @@ fi
 
 systemctl enable --now docker
 
-# CloudWatch Agent — mem/disk/swap metrics + bootstrap + kernel/OOM lines.
+# CloudWatch Agent — mem/disk/swap + bootstrap/system logs.
+# Quoted heredoc: bash set -u must not expand the agent InstanceId placeholder.
+# Terraform escapes that token as dollar-dollar-brace so the rendered script keeps
+# the literal agent form inside the quoted heredoc body.
 install -d -m 755 /opt/aws/amazon-cloudwatch-agent/etc
-# InstanceId dimension uses CW agent placeholder (escaped for templatefile).
-cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
+cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWCFG'
 {
   "agent": {
     "metrics_collection_interval": 60,
@@ -107,13 +109,13 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
         "collect_list": [
           {
             "file_path": "/opt/drone-feed/compose-bootstrap.log",
-            "log_group_name": "/${name_prefix}/bootstrap",
+            "log_group_name": "/__NAME_PREFIX__/bootstrap",
             "log_stream_name": "{instance_id}",
             "retention_in_days": 14
           },
           {
             "file_path": "/var/log/messages",
-            "log_group_name": "/${name_prefix}/system",
+            "log_group_name": "/__NAME_PREFIX__/system",
             "log_stream_name": "{instance_id}/messages",
             "retention_in_days": 14
           }
@@ -123,6 +125,7 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
   }
 }
 CWCFG
+sed -i "s|__NAME_PREFIX__|${name_prefix}|g" /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
   -a fetch-config -m ec2 -s \
   -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json || true
