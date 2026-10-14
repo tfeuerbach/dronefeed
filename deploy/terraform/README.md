@@ -11,7 +11,7 @@ No Route 53, ACM, or domain is created here.
 | SSH | `dronefeed` + key from setup (passwordless sudo) |
 | Schedule | Mon–Fri 8–18; after hours: `./wake.sh 4\|8\|12` (max 12h) |
 | Offline page | `terraform output -raw maintenance_url` |
-| Ops email | Optional SNS (schedule miss / on-too-long / budget) |
+| Ops email | Optional SNS (schedule / budget / disk / swap / OOM) |
 | Console | CloudWatch dashboard `*-ops` + log groups `/{name_prefix}/*` |
 
 ## Prerequisites
@@ -98,10 +98,11 @@ and `/opt/drone-feed/DEPLOY.txt` on the host.
    terraform output -raw ops_log_group_prefix
    ```
 
-   Dashboard: EC2 CPU / status checks / network, host mem & disk (CloudWatch
-   Agent), and recent `web` / `mediamtx` / `caddy` / `db` / bootstrap logs.
-   Log groups: `/{name_prefix}/{web,caddy,mediamtx,db,bootstrap}` (14-day
-   retention). Compose uses the `awslogs` driver via
+   Dashboard: EC2 CPU / status checks / network, host mem / swap / disk
+   (CloudWatch Agent), and recent `web` / `mediamtx` / `caddy` / `db` /
+   bootstrap / system logs.
+   Log groups: `/{name_prefix}/{web,caddy,mediamtx,db,bootstrap,system}`
+   (14-day retention). Compose uses the `awslogs` driver via
    `docker-compose.logging.yml` on first boot.
 
 ## Operator email (SNS)
@@ -115,10 +116,13 @@ Optional. Not SES — no SMTP identity required.
 | Schedule miss | Weekday ~15m after start; instance not `running` |
 | On too long | Weekday ~15m after stop; instance still up |
 | Budget | 80% / 100% of monthly USD actual |
+| Disk high | Root `disk_used_percent` ≥ `disk_alarm_percent` (default **85**) |
+| Swap high | `swap_used_percent` ≥ `swap_alarm_percent` (default **50**) — memory pressure |
+| OOM | Kernel OOM lines in `/var/log/messages` (`/{name_prefix}/system`) |
 
 Guided defaults alerts **on**; smoke asks “Test operator email alerts?”
 (**off** by default). Set in tfvars: `enable_ops_alerts`, `ops_alert_email`,
-`monthly_budget_usd`.
+`monthly_budget_usd` (optional `disk_alarm_percent` / `swap_alarm_percent`).
 
 ## After-hours wake
 

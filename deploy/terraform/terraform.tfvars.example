@@ -32,11 +32,13 @@ enable_ssm           = true
 enable_ses_send      = false # app SMTP policy; separate from SNS ops alerts
 associate_elastic_ip = true
 
-# SNS operator alerts (schedule miss / on-too-long / monthly budget) + setup.sh bootstrap mail.
+# SNS operator alerts (schedule / budget / disk / swap / OOM) + setup.sh bootstrap mail.
 # Confirm the AWS subscription email once after apply.
-# enable_ops_alerts  = true
-# ops_alert_email    = "you@example.com"
-# monthly_budget_usd = 500
+# enable_ops_alerts    = true
+# ops_alert_email      = "you@example.com"
+# monthly_budget_usd   = 500
+# disk_alarm_percent   = 85
+# swap_alarm_percent   = 50
 
 # CloudWatch Logs retention for Compose services (dashboard always created).
 # log_retention_days = 14

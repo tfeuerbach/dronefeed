@@ -68,7 +68,7 @@ fi
 
 systemctl enable --now docker
 
-# CloudWatch Agent — memory/disk metrics + bootstrap compose log file.
+# CloudWatch Agent — mem/disk/swap metrics + bootstrap + kernel/OOM lines.
 install -d -m 755 /opt/aws/amazon-cloudwatch-agent/etc
 # InstanceId dimension uses CW agent placeholder (escaped for templatefile).
 cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
@@ -86,6 +86,9 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
       "mem": {
         "measurement": ["mem_used_percent"]
       },
+      "swap": {
+        "measurement": ["swap_used_percent"]
+      },
       "disk": {
         "measurement": ["used_percent"],
         "resources": ["/"],
@@ -101,6 +104,12 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CWCFG
             "file_path": "/opt/drone-feed/compose-bootstrap.log",
             "log_group_name": "/${name_prefix}/bootstrap",
             "log_stream_name": "{instance_id}",
+            "retention_in_days": 14
+          },
+          {
+            "file_path": "/var/log/messages",
+            "log_group_name": "/${name_prefix}/system",
+            "log_stream_name": "{instance_id}/messages",
             "retention_in_days": 14
           }
         ]

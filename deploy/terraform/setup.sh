@@ -749,7 +749,7 @@ declare -a EXTRA_VALS=()
 if [[ "$SMOKE" == true ]]; then
   apply_smoke_defaults
   section "Smoke — operator email (optional)"
-  info "SNS only: schedule miss / on-too-long / budget + one bootstrap mail after apply."
+  info "SNS: schedule / budget / disk / swap / OOM + one bootstrap mail after apply."
   info "You must Confirm the AWS subscription email before the bootstrap message arrives."
   ENABLE_OPS_ALERTS="false"
   OPS_ALERT_EMAIL=""
@@ -1074,7 +1074,7 @@ prompt_yn "Attach SES send policy / plan to use outbound email later (app SMTP)?
 ENABLE_OPS_ALERTS="false"
 OPS_ALERT_EMAIL=""
 MONTHLY_BUDGET_USD=500
-info "Operator alerts use SNS (no SES): schedule miss, on-too-long, monthly budget."
+info "Operator alerts use SNS (no SES): schedule, budget, disk, swap pressure, OOM."
 if prompt_yn "Enable operator email alerts (SNS)?" y; then
   ENABLE_OPS_ALERTS="true"
   OPS_ALERT_EMAIL="$(prompt "Alert email inbox" "$ADMIN_EMAIL")"
@@ -1434,10 +1434,13 @@ Going forward you will get email ONLY for:
   • Weekday start miss (instance not running ~15m after start)
   • Weekday stop miss / on too long (still running ~15m after stop)
   • Monthly budget thresholds (80% / 100%)
+  • Root disk high (default >= 85% used)
+  • Swap high (default >= 50% used — memory pressure / OOM risk)
+  • Kernel OOM killer lines
 
 Not emailed (console only):
   CloudWatch dashboard: ${dash_name}
-  Log groups:           ${log_prefix}/{web,caddy,mediamtx,db,bootstrap}
+  Log groups:           ${log_prefix}/{web,caddy,mediamtx,db,bootstrap,system}
 EOF
 )"
   fi

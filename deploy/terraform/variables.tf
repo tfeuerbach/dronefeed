@@ -208,9 +208,31 @@ variable "schedule_stop_hour" {
 }
 
 variable "enable_ops_alerts" {
-  description = "SNS email for schedule miss / on-too-long / monthly budget, plus bootstrap mail from setup.sh."
+  description = "SNS email for schedule miss / on-too-long / monthly budget / disk+swap pressure / OOM lines, plus bootstrap mail from setup.sh."
   type        = bool
   default     = false
+}
+
+variable "disk_alarm_percent" {
+  description = "CloudWatch alarm threshold for root disk_used_percent (SNS when ops alerts enabled)."
+  type        = number
+  default     = 85
+
+  validation {
+    condition     = var.disk_alarm_percent >= 50 && var.disk_alarm_percent <= 99
+    error_message = "disk_alarm_percent must be between 50 and 99."
+  }
+}
+
+variable "swap_alarm_percent" {
+  description = "CloudWatch alarm threshold for swap_used_percent (memory pressure / OOM risk; SNS when ops alerts enabled)."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.swap_alarm_percent >= 10 && var.swap_alarm_percent <= 99
+    error_message = "swap_alarm_percent must be between 10 and 99."
+  }
 }
 
 variable "ops_alert_email" {

@@ -5,7 +5,7 @@
 locals {
   ops_alerts_enabled      = var.enable_ops_alerts
   schedule_checks_enabled = var.enable_ops_alerts && var.enable_business_hours_schedule
-  log_services            = ["web", "caddy", "mediamtx", "db", "bootstrap"]
+  log_services            = ["web", "caddy", "mediamtx", "db", "bootstrap", "system"]
   # Check 15 minutes after scheduled start/stop.
   schedule_check_minute = 15
 }
@@ -285,7 +285,7 @@ resource "aws_scheduler_schedule" "check_stopped" {
 }
 
 # -----------------------------------------------------------------------------
-# CloudWatch log groups (Docker awslogs + bootstrap file via agent)
+# CloudWatch log groups (Docker awslogs + bootstrap + system/OOM)
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "service" {
@@ -299,8 +299,96 @@ resource "aws_cloudwatch_log_group" "service" {
   }
 }
 
+# OOM killer / memory pressure lines from /var/log/messages → custom metric → SNS.
+resource "aws_cloudwatch_log_metric_filter" "oom" {
+  name           = "${var.name_prefix}-oom"
+  log_group_name = aws_cloudwatch_log_group.service["system"].name
+  pattern        = "?\"Out of memory\" ?oom-kill ?\"Killed process\" ?oom_reaper"
+
+  metric_transformation {
+    name          = "OomEvents"
+    namespace     = "DroneFeed/${var.name_prefix}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
 # -----------------------------------------------------------------------------
-# CloudWatch dashboard (EC2 + network + agent mem/disk + log widgets)
+# Host pressure alarms (disk / swap / OOM) → SNS when ops alerts enabled
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "disk_high" {
+  count = local.ops_alerts_enabled ? 1 : 0
+
+  alarm_name          = "${var.name_prefix}-disk-high"
+  alarm_description   = "Root disk used >= ${var.disk_alarm_percent}% on ${var.name_prefix}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  threshold           = var.disk_alarm_percent
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ops_alerts[0].arn]
+  ok_actions          = [aws_sns_topic.ops_alerts[0].arn]
+
+  metric_query {
+    id          = "disk"
+    return_data = true
+    expression  = "SEARCH('{CWAgent,InstanceId,path,device,fstype} disk_used_percent InstanceId=\"${aws_instance.app.id}\" AND path=\"/\"', 'Average', 300)"
+    label       = "RootDiskUsedPercent"
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-disk-high"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "swap_high" {
+  count = local.ops_alerts_enabled ? 1 : 0
+
+  alarm_name          = "${var.name_prefix}-swap-high"
+  alarm_description   = "Swap used >= ${var.swap_alarm_percent}% (memory pressure / OOM risk) on ${var.name_prefix}"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  threshold           = var.swap_alarm_percent
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ops_alerts[0].arn]
+  ok_actions          = [aws_sns_topic.ops_alerts[0].arn]
+
+  metric_query {
+    id          = "swap"
+    return_data = true
+    expression  = "SEARCH('{CWAgent,InstanceId} swap_used_percent InstanceId=\"${aws_instance.app.id}\"', 'Average', 300)"
+    label       = "SwapUsedPercent"
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-swap-high"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "oom" {
+  count = local.ops_alerts_enabled ? 1 : 0
+
+  alarm_name          = "${var.name_prefix}-oom"
+  alarm_description   = "Kernel OOM killer activity detected on ${var.name_prefix}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "OomEvents"
+  namespace           = "DroneFeed/${var.name_prefix}"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ops_alerts[0].arn]
+
+  tags = {
+    Name = "${var.name_prefix}-oom"
+  }
+
+  depends_on = [aws_cloudwatch_log_metric_filter.oom]
+}
+
+# -----------------------------------------------------------------------------
+# CloudWatch dashboard (EC2 + network + agent mem/disk/swap + log widgets)
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_dashboard" "ops" {
@@ -373,7 +461,7 @@ resource "aws_cloudwatch_dashboard" "ops" {
         type   = "metric"
         x      = 0
         y      = 7
-        width  = 12
+        width  = 8
         height = 6
         properties = {
           title  = "Memory used %"
@@ -387,9 +475,25 @@ resource "aws_cloudwatch_dashboard" "ops" {
       },
       {
         type   = "metric"
-        x      = 12
+        x      = 8
         y      = 7
-        width  = 12
+        width  = 8
+        height = 6
+        properties = {
+          title  = "Swap used %"
+          region = var.aws_region
+          metrics = [
+            ["CWAgent", "swap_used_percent", "InstanceId", aws_instance.app.id, { stat = "Average" }],
+          ]
+          period = 300
+          view   = "timeSeries"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 7
+        width  = 8
         height = 6
         properties = {
           title  = "Disk used % (root)"
@@ -445,9 +549,9 @@ resource "aws_cloudwatch_dashboard" "ops" {
         width  = 12
         height = 6
         properties = {
-          title  = "db / bootstrap"
+          title  = "db / bootstrap / system"
           region = var.aws_region
-          query  = "SOURCE '/${var.name_prefix}/db' | SOURCE '/${var.name_prefix}/bootstrap' | fields @timestamp, @message | sort @timestamp desc | limit 50"
+          query  = "SOURCE '/${var.name_prefix}/db' | SOURCE '/${var.name_prefix}/bootstrap' | SOURCE '/${var.name_prefix}/system' | fields @timestamp, @message | sort @timestamp desc | limit 50"
         }
       },
     ]
