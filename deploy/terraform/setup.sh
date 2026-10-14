@@ -595,7 +595,7 @@ estimate_workload_vcpu() {
   ((pullers > 200)) && pull_v=$((pull_v + 4))
   ((pullers > 500)) && pull_v=$((pull_v + 8))
   need=$((need + pull_v))
-  # LiveView browsers are cheap vs encodes
+  # Website viewers are cheap vs encodes
   ui_v=$(((users + 49) / 50))
   need=$((need + ui_v))
   # ~20% headroom for spikes / OS / compose leftovers
@@ -807,12 +807,12 @@ fi
 echo
 refresh_ec2_catalog "$AWS_REGION"
 echo
-info "Sizing is DroneFeed-specific: public feeds = continuous libx264 encodes (CPU-heavy)."
-info "Media pullers (SRT/RTSP/RTMP) and UI browsers are lighter but counted separately."
+info "Sizing is DroneFeed-specific: each public feed is a continuous CPU encode."
+info "Website viewers and external video players are lighter but counted separately."
 info "Heuristic picks the smallest c7i in the live catalog with enough vCPU (+~25% headroom)."
 echo
 
-FEEDS="$(prompt "Peak concurrent public feeds (live + VOD republish encodes)" "2")"
+FEEDS="$(prompt "Peak concurrent public feeds (live sessions + VOD republishes encoding at once)" "2")"
 [[ "$FEEDS" =~ ^[0-9]+$ ]] && ((FEEDS >= 1)) || die "feeds must be a positive integer"
 
 HEIGHT="$(pick 1 "Typical public output resolution" \
@@ -820,12 +820,17 @@ HEIGHT="$(pick 1 "Typical public output resolution" \
   "1080 - heavier CPU per feed" \
   "source - keep source resolution (highest CPU)")"
 
-UI_USERS="$(prompt "Peak concurrent UI users (browsers / LiveView)" "5")"
-[[ "$UI_USERS" =~ ^[0-9]+$ ]] || die "UI users must be an integer"
+echo
+info "Website viewers = people with DroneFeed open in a browser (watching in the web UI)."
+info "Do not count VLC / ffplay / SRT tools here — those are the next question."
+UI_USERS="$(prompt "Peak concurrent website viewers" "5")"
+[[ "$UI_USERS" =~ ^[0-9]+$ ]] || die "website viewers must be an integer"
 
-info "Pullers = research tools / players opening SRT, RTSP, or RTMP — not website tabs."
-PULLERS="$(prompt "Peak concurrent media pullers (SRT/RTSP/RTMP)" "10")"
-[[ "$PULLERS" =~ ^[0-9]+$ ]] || die "pullers must be an integer"
+echo
+info "External pullers = separate apps opening a stream URL (VLC, ffplay, research SRT/RTSP/RTMP tools)."
+info "Count each open stream connection. Website tabs are already counted above — leave 0 if nobody pulls outside the browser."
+PULLERS="$(prompt "Peak concurrent external pullers" "10")"
+[[ "$PULLERS" =~ ^[0-9]+$ ]] || die "external pullers must be an integer"
 FANOUT="n"
 ((PULLERS >= 20)) && FANOUT="y"
 
@@ -839,8 +844,8 @@ REC_ROOT="$(recommend_root_gb "$FEEDS" "$HEIGHT" "$RETENTION_DAYS" "$REC_HOURS_H
 
 echo
 info "Workload estimate (~heuristic, not a bench):"
-info "  ${FEEDS} encodes @${HEIGHT}, ${PULLERS} media pullers, ${UI_USERS} UI users"
-info "  Target >= ${REC_VCPU_NEED} vCPU (platform + encodes + pullers + UI + 25% headroom)"
+info "  ${FEEDS} encodes @${HEIGHT}, ${UI_USERS} website viewers, ${PULLERS} external pullers"
+info "  Target >= ${REC_VCPU_NEED} vCPU (platform + encodes + pullers + viewers + 25% headroom)"
 info "Recommendation from catalog:"
 info "  Instance: ${REC_INSTANCE}  (${EC2_VCPU[$REC_INSTANCE]:-?} vCPU / ${EC2_RAM_GB[$REC_INSTANCE]:-?} GiB)"
 if [[ -n "${EC2_USD_HR[$REC_INSTANCE]+x}" ]]; then
@@ -1266,7 +1271,7 @@ info "Wrote $TFVARS"
 info "Wrote $SECRETS_TFVARS (secrets; gitignored)"
 echo
 info "Project=$PROJECT  Environment=$ENVIRONMENT  name_prefix=$NAME_PREFIX"
-info "Workload: ${FEEDS} feeds @${HEIGHT}, ${UI_USERS} UI users, retain ${RETENTION_DAYS}d"
+info "Workload: ${FEEDS} feeds @${HEIGHT}, ${UI_USERS} website viewers, ${PULLERS} external pullers, retain ${RETENTION_DAYS}d"
 info "Compute:  $INSTANCE_TYPE + ${ROOT_GB} GiB gp3 @ $AWS_REGION"
 info "Admin:    $ADMIN_EMAIL"
 info "SES (app SMTP policy): $ENABLE_SES"
