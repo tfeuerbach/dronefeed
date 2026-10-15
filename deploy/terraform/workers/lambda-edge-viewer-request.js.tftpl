@@ -1,0 +1,74 @@
+/**
+ * Lambda@Edge viewer-request: offline page when EC2 is unreachable.
+ * When origin is healthy, return the request so CloudFront fetches it
+ * (do not proxy the body — viewer-request responses are size-capped).
+ */
+
+"use strict";
+
+const ORIGIN_BASE = "${origin_base}";
+const MAINTENANCE_URL = "${maintenance_url}";
+const ORIGIN_TIMEOUT_MS = 2500;
+
+exports.handler = async (event) => {
+  const request = event.Records[0].cf.request;
+  const method = (request.method || "GET").toUpperCase();
+
+  // Mutating methods: let CloudFront hit the origin directly.
+  if (method !== "GET" && method !== "HEAD") {
+    return request;
+  }
+
+  const path = request.uri || "/";
+  const qs = request.querystring ? `?$${request.querystring}` : "";
+  const originUrl = `$${ORIGIN_BASE}$${path}$${qs}`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
+    const upstream = await fetch(originUrl, {
+      method: "HEAD",
+      headers: { accept: "*/*" },
+      signal: controller.signal,
+      redirect: "manual",
+    });
+    clearTimeout(timer);
+
+    if (upstream.status >= 502 && upstream.status <= 504) {
+      return maintenanceResponse(upstream.status);
+    }
+
+    return request;
+  } catch {
+    return maintenanceResponse(522);
+  }
+};
+
+async function maintenanceResponse(originStatus) {
+  try {
+    const page = await fetch(MAINTENANCE_URL, { redirect: "follow" });
+    const html = await page.text();
+    return {
+      status: "503",
+      statusDescription: "Service Unavailable",
+      headers: {
+        "content-type": [{ key: "Content-Type", value: "text/html; charset=utf-8" }],
+        "cache-control": [{ key: "Cache-Control", value: "no-store" }],
+        "x-dronefeed-origin-status": [
+          { key: "X-Dronefeed-Origin-Status", value: String(originStatus) },
+        ],
+      },
+      body: html,
+    };
+  } catch {
+    return {
+      status: "503",
+      statusDescription: "Service Unavailable",
+      headers: {
+        "content-type": [{ key: "Content-Type", value: "text/plain; charset=utf-8" }],
+        "cache-control": [{ key: "Cache-Control", value: "no-store" }],
+      },
+      body: "DroneFeed is down after hours",
+    };
+  }
+}

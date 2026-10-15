@@ -19,6 +19,7 @@ ADMIN_PASSWORD="$(printf '%s' '${admin_password_b64}' | base64 -d)"
 
 AWS_REGION="${aws_region}"
 NAME_PREFIX="${name_prefix}"
+APP_HOSTNAME="${app_hostname}"
 
 dnf -y update
 # rsyslog: AL2023 is journald-only by default; CW Agent + OOM filter need /var/log/messages.
@@ -204,7 +205,7 @@ else
   SECRET_KEY_BASE="$(openssl rand -base64 48 | tr -d '\n')"
   POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -d '\n=/+' | cut -c1-24)"
 
-  export DEPLOY_DIR PUBLIC_IP SECRET_KEY_BASE POSTGRES_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD
+  export DEPLOY_DIR PUBLIC_IP SECRET_KEY_BASE POSTGRES_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD APP_HOSTNAME
 
   if [[ ! -f "$DEPLOY_DIR/.env" ]]; then
     cp "$DEPLOY_DIR/.env.example" "$DEPLOY_DIR/.env"
@@ -215,12 +216,18 @@ import os
 from pathlib import Path
 
 path = Path(os.environ["DEPLOY_DIR"]) / ".env"
+public_ip = os.environ["PUBLIC_IP"]
+hostname = (os.environ.get("APP_HOSTNAME") or "").strip()
+# Hostname + CloudFront/edge TLS: https URL generation, keep Caddy on HTTP (:80 origin).
+# IP-first: http until a hostname is configured.
+phx_host = hostname if hostname else public_ip
+phx_scheme = "https" if hostname else "http"
 replacements = {
-    "PHX_HOST": os.environ["PUBLIC_IP"],
-    "MEDIA_IP": os.environ["PUBLIC_IP"],
+    "PHX_HOST": phx_host,
+    "MEDIA_IP": public_ip,
     "MEDIA_HOST": "",
     "CADDYFILE": "Caddyfile.http",
-    "PHX_SCHEME": "http",
+    "PHX_SCHEME": phx_scheme,
     "SECRET_KEY_BASE": os.environ["SECRET_KEY_BASE"],
     "POSTGRES_PASSWORD": os.environ["POSTGRES_PASSWORD"],
     "ADMIN_EMAIL": os.environ["ADMIN_EMAIL"],

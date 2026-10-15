@@ -1,10 +1,11 @@
 # After-hours maintenance page
 
 When the app host (e.g. EC2) is powered off for cost savings, show a static
-“down after hours” page on the HTTPS UI via **S3 + CloudFront** and a
-**Cloudflare Worker** failover.
+“down after hours” page on the HTTPS UI via **S3 + CloudFront** and edge
+failover (Cloudflare Worker **or** Spectre Lambda@Edge on the UI CloudFront).
 
 Media ports (SRT / RTSP / RTMP) cannot be faked — only the website gets this page.
+Do not point DNS at the S3 bucket.
 
 ## Quick start (any self-hoster)
 
@@ -17,7 +18,7 @@ cp config.example.env config.env   # optional; configure.sh can create it
 ./sync.sh                          # upload rendered index.html + brand-mark.svg
 ```
 
-Then follow `generated/cloudflare-checklist.md` (written by `configure.sh`).
+Then wire edge failover (Path 1 or Path 2 below).
 
 ### `./configure.sh` prompts
 
@@ -36,15 +37,20 @@ Re-render anytime without prompts:
 ./configure.sh --from-config
 ```
 
-### Cloudflare (once)
+### Path 1 — Cloudflare
 
 Step-by-step: **[../terraform/README.md](../terraform/README.md#path-1--cloudflare)**.  
 Worker JS: [`../terraform/workers/cloudflare-worker.js`](../terraform/workers/cloudflare-worker.js).
 
-### Route 53 (once)
+Proxied A → EIP; Worker `MAINTENANCE_URL` = Terraform `maintenance_url`.
 
-Step-by-step: **[../terraform/README.md](../terraform/README.md#path-2--route-53-aws)**.  
-Lambda@Edge JS: [`../terraform/workers/lambda-edge-viewer-request.js`](../terraform/workers/lambda-edge-viewer-request.js).
+### Path 2 — Route 53
+
+Step-by-step: **[../terraform/README.md](../terraform/README.md#path-2--route-53-spectre-owns-edge-dns-account-owns-records)**.
+
+Spectre Terraform creates ACM + Lambda@Edge + UI CloudFront. DNS account only
+adds ACM validation CNAMEs and an alias to `ui_cloudfront_domain`.  
+Lambda source is managed by Terraform ([`../terraform/workers/`](../terraform/workers/)).
 
 ### Files
 
@@ -54,8 +60,8 @@ Lambda@Edge JS: [`../terraform/workers/lambda-edge-viewer-request.js`](../terraf
 | `config.example.env` | Documented defaults |
 | `config.env` | Your answers (**gitignored**) |
 | `configure.sh` | Interactive renderer |
-| `index.html` / `cloudflare-worker.js` | Rendered outputs (**gitignored** — may include your hostname/CDN URL) |
-| `generated/` | AWS ids, ACM records, checklist (**gitignored**) |
+| `index.html` / `cloudflare-worker.js` | Rendered outputs (**gitignored**) |
+| `generated/` | AWS ids, checklist (**gitignored**) |
 | `brand-mark.svg` | Uploaded next to `index.html` |
 
 ## AWS (Terraform)
@@ -68,7 +74,7 @@ default page. After apply:
 terraform -chdir=../terraform output -raw maintenance_url
 ```
 
-Write `generated/aws.env` (or let `setup.sh` do it):
+Write `generated/aws.env` (or let `setup.sh` / `stack-info.sh` do it):
 
 ```bash
 BUCKET=…
@@ -84,5 +90,6 @@ Then customize + re-upload:
 ./sync.sh
 ```
 
-Optional pretty hostname: ACM DNS validation + `./attach-custom-domain.sh`
-(uses `DOWN_HOST` or `down.$SITE_HOST`).
+Optional pretty hostname on the **offline** distribution only:
+ACM DNS validation + `./attach-custom-domain.sh` (uses `DOWN_HOST` or
+`down.$SITE_HOST`). That is separate from the UI hostname Path 2 above.

@@ -85,10 +85,17 @@ sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456 \
 
 Prefer **NLB** (or SG on the instance) for 1935/8554/8890 — ALB is HTTP/HTTPS-oriented and is a poor fit for raw RTMP/RTSP/SRT.
 
-## DNS
+## DNS / HTTPS hostname
 
-1. Buy a domain and create an **A** (and optional **AAAA**) record for `PHX_HOST` → EC2 Elastic IP.
-2. Wait for propagation, then start compose — Caddy obtains and auto-renews the certificate.
+For the Terraform AWS stack, prefer edge TLS (Cloudflare Worker **or** Spectre
+UI CloudFront + Lambda@Edge). See **[terraform/README.md — Domain and HTTPS](./terraform/README.md#domain-and-https-optional)**:
+
+- **Path 1 Cloudflare** — proxied A → EIP + Worker; keep `CADDYFILE=Caddyfile.http`
+- **Path 2 Route 53** — Spectre owns ACM/Lambda/UI CloudFront; DNS account only
+  adds validation CNAMEs + alias; keep `CADDYFILE=Caddyfile.http`
+
+Classic on-box Let's Encrypt (A → EIP, `CADDYFILE=Caddyfile`) is still fine for
+non-edge self-host installs — not the Spectre Route 53 Path 2 flow.
 
 ## Compose deploy
 

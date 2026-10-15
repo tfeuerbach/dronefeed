@@ -3,7 +3,8 @@
 IP-first host: VPC, EC2, Elastic IP, Docker Compose on plain HTTP, weekday
 power schedule (Mon–Fri 8:00–18:00 local), S3 + CloudFront offline page,
 CloudWatch logs/dashboard, and optional SNS operator email alerts.
-No Route 53, ACM, or domain is created here.
+Optional `app_hostname` adds ACM + Lambda@Edge (+ UI CloudFront when enabled)
+in this account; Route 53 records stay in the DNS account.
 
 | | |
 |--|--|
@@ -151,75 +152,89 @@ Behavior:
   over — instance stays up until the normal weekday stop (e.g. 18:00), not N
   hours after the wake command.
 
-## Domain and HTTPS (optional, often another account)
+## Domain and HTTPS (optional)
 
-Not needed for IP-first. For `https://dronefeed.example.com`, configure DNS in
-the account that owns the hosted zone.
+Not needed for IP-first. Pick **Path 1 (Cloudflare)** or **Path 2 (Route 53)**.
+Media (SRT/RTSP/RTMP/UDP) always uses the Elastic IP — never an HTTP-only proxy.
 
 ### How offline works
 
 Stopping EC2 does not change DNS. Do not point DNS at the S3 bucket. The offline
-HTML is on CloudFront (`maintenance_url`). Failover is at the edge (Cloudflare
-Worker or Lambda@Edge): try the live app; if EC2 is down, return that HTML.
-
-Media (SRT/RTSP/RTMP) must use the Elastic IP or a DNS-only hostname — not a
-proxied Cloudflare / UI-CloudFront hostname (HTTP(S) only).
-
-### Handoff (EC2 account → DNS admin)
-
-```bash
-cd deploy/terraform
-./stack-info.sh -p spectre          # full block for Teams
-# or:
-terraform output -raw public_ip
-terraform output -raw maintenance_url
-```
-
-Also give them the hostname (e.g. `dronefeed.ecsdevlabs.com`).
+HTML is always on the maintenance CloudFront (`maintenance_url`). Failover is at
+the edge: try the live origin; if EC2 is down, return that HTML.
 
 ### On the EC2 box after the hostname works
+
+CloudFront / Cloudflare terminates HTTPS for the UI. Keep the origin on HTTP:
 
 ```bash
 # /opt/drone-feed/deploy/.env
 PHX_HOST=dronefeed.example.com
 MEDIA_IP=<EIP>
-MEDIA_HOST=media.dronefeed.example.com   # optional DNS-only → EIP
 PHX_SCHEME=https
-CADDYFILE=Caddyfile
-ACME_EMAIL=you@example.com
-# docker compose --env-file .env up -d --force-recreate caddy web
+CADDYFILE=Caddyfile.http
+# docker compose --env-file .env up -d --force-recreate web
 ```
+
+With `app_hostname` set, first-boot user_data stamps `PHX_HOST` + `PHX_SCHEME=https`
+automatically (still `Caddyfile.http`). Endpoint `:force_ssl` is not used (compile-env
+safe). Optional on-box HTTPS redirect: `PHX_FORCE_SSL=true` only with `CADDYFILE=Caddyfile`.
+
+Do **not** set `PHX_FORCE_SSL` behind CloudFront. Do **not** switch to on-box Let's
+Encrypt (`CADDYFILE=Caddyfile`) while the edge origin is HTTP `:80`.
 
 ### Path 1 — Cloudflare
 
+Use when DNS is on Cloudflare (no Spectre UI CloudFront / ACM / Lambda@Edge).
+
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| A | `feeds` (or `@`) | `<EIP>` | Proxied |
-| A (optional) | `media` | `<EIP>` | DNS only |
+| A | app hostname | `<EIP>` | Proxied (orange) |
+| A (optional) | media hostname | `<EIP>` | DNS only (grey) |
 
-1. Create a Worker; paste [`workers/cloudflare-worker.js`](./workers/cloudflare-worker.js).
-2. Variable `MAINTENANCE_URL` = `maintenance_url` from Terraform.
-3. Route: `feeds.example.com/*`.
+1. Terraform still creates the offline S3 + maintenance CloudFront (`maintenance_url`).
+2. Create a Worker; paste [`workers/cloudflare-worker.js`](./workers/cloudflare-worker.js).
+3. Worker variable `MAINTENANCE_URL` = `terraform output -raw maintenance_url`.
+4. Route: `your-hostname/*`.
+5. Check: instance up → app; instance stopped → offline HTML.
+6. On the box: set `PHX_HOST` / `PHX_SCHEME=https` / `CADDYFILE=Caddyfile.http` (above).
 
-### Path 2 — Route 53 (other AWS account)
+No ACM validation ticket. No alias to CloudFront. Media must stay DNS-only / EIP.
 
-In the DNS account:
+### Path 2 — Route 53 (Spectre owns edge; DNS account owns records)
 
-1. **ACM** in `us-east-1`: cert for the hostname; validate in Route 53; wait until Issued.
-2. **Lambda@Edge** (Node 18, `us-east-1`): paste
-   [`workers/lambda-edge-viewer-request.js`](./workers/lambda-edge-viewer-request.js);
-   set `ORIGIN_BASE=http://<public_ip>` and `MAINTENANCE_URL=<maintenance_url>`;
-   publish a version (not `$LATEST`).
-3. **CloudFront** (new UI distribution — not the Terraform maintenance one): origin
-   EIP:80; caching off; viewer-request → that Lambda version; alternate domain + ACM cert.
-4. **Route 53**: Alias A/AAAA hostname → that CloudFront; optional `media` A → EIP.
-5. Check: instance up → app; instance stopped → offline HTML; `maintenance_url` still works.
-6. Switch the box to HTTPS (`.env` above) once DNS resolves.
+Use when the hosted zone is in another AWS account (e.g. `ecsdevlabs.com`).
 
-Route 53 health-check failover to S3 is a worse fit here (certs + media still on
-the EIP). Edge failover matches the private S3 + CloudFront OAC offline page.
+**This account (Spectre) creates:** ACM + Lambda@Edge + UI CloudFront.  
+**DNS account creates:** ACM validation CNAMEs + alias A/AAAA → UI CloudFront.
 
-Workers: [`workers/README.md`](./workers/README.md).
+```hcl
+app_hostname         = "dronefeed.ecsdevlabs.com"
+enable_ui_cloudfront = false   # true after ACM is Issued
+```
+
+```bash
+cd deploy/terraform
+terraform apply                              # ACM + Lambda@Edge
+terraform output ui_acm_validation_records   # give to DNS
+./stack-info.sh -p spectre                   # full DNS ticket text
+# … DNS adds validation CNAMEs; wait until ACM = Issued …
+# set enable_ui_cloudfront = true
+terraform apply
+terraform output -raw ui_cloudfront_domain   # give to DNS for alias
+```
+
+**DNS ticket (hosted-zone account only):**
+
+1. Create the ACM validation CNAME(s) from `ui_acm_validation_records`.
+2. After Spectre enables UI CloudFront: **Alias A/AAAA** hostname →
+   `ui_cloudfront_domain` (not the EIP, not the offline CloudFront).
+3. No `media.*` record required (media stays on the EIP).
+
+**Do not:** point DNS at the S3 offline bucket; reuse the offline CloudFront as
+the UI distribution; put media behind the UI CloudFront.
+
+Workers / templates: [`workers/README.md`](./workers/README.md).
 
 ## Schedule and sizing
 
@@ -241,7 +256,7 @@ Disk: 80–200+ GiB gp3 from retention (wizard estimates from feeds × hours × 
 
 ## Not included
 
-- Domains / Route 53 / ACM (Path 1 or 2 above)
+- Domains / DNS records in another account (Path 1 or 2 above)
 - SES identity verification (app SMTP is separate from SNS ops alerts)
 - Per-container / CVE / ingest email storms
 - Remote Terraform state (keep `terraform.tfstate` safe)
@@ -275,8 +290,7 @@ one-shots), SNS/budget/schedule-check Lambda, CloudWatch dashboard + log
 groups, IAM roles/profiles this stack created, offline S3 + CloudFront if
 they were enabled.
 
-**Does not remove:** DNS / UI CloudFront / Lambda@Edge / ACM you created in
-another account; local gitignored files (`terraform.tfvars`,
+**Does not remove:** Route 53 records in another account; local gitignored files (`terraform.tfvars`,
 `secrets.auto.tfvars`, `handoff.*`, `keys/`).
 
 Equivalent manual form: `AWS_PROFILE=spectre terraform destroy`.

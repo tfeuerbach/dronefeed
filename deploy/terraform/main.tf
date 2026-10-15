@@ -315,6 +315,7 @@ resource "aws_instance" "app" {
     deploy_user            = var.deploy_user
     name_prefix            = var.name_prefix
     aws_region             = var.aws_region
+    app_hostname           = trimspace(var.app_hostname)
     ssh_authorized_key_b64 = base64encode(var.ssh_authorized_key != "" ? var.ssh_authorized_key : var.public_key)
     admin_email_b64        = base64encode(var.admin_email)
     admin_password_b64     = base64encode(var.admin_password)

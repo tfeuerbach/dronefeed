@@ -36,6 +36,7 @@ defmodule DroneFeedWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
+  plug DroneFeedWeb.Plugs.ForceSslWhenHttps
   plug :session
   plug DroneFeedWeb.Router
 

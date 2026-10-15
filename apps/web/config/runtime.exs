@@ -188,18 +188,8 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     check_origin: [origin]
 
-  # TLS at Caddy: redirect plain HTTP when serving https://. Skip for IP-first PHX_SCHEME=http.
-  if web_scheme == "https" do
-    config :drone_feed, DroneFeedWeb.Endpoint,
-      force_ssl: [
-        rewrite_on: [:x_forwarded_proto],
-        hsts: true,
-        exclude: [
-          hosts: ["localhost", "127.0.0.1", "web"],
-          paths: ["/api/mediamtx/auth"]
-        ]
-      ]
-  end
+  # Do not set Endpoint :force_ssl here — it is compile-env tracked and breaks
+  # releases when PHX_SCHEME flips http→https. See ForceSslWhenHttps plug.
 
   mail_from_name =
     System.get_env("SMTP_FROM_NAME") || System.get_env("MAIL_FROM_NAME") || "DroneFeed"

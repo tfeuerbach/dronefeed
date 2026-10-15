@@ -74,7 +74,7 @@ output "schedule_stop_name" {
 }
 
 output "next_steps" {
-  description = "Post-apply checklist (IP-first HTTP; domain/DNS optional later)."
+  description = "Post-apply checklist (IP-first HTTP; DNS-only handoff when app_hostname is set)."
   value       = <<-EOT
     Public IP: ${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
     App URL:   http://${var.associate_elastic_ip ? aws_eip.app[0].public_ip : aws_instance.app.public_ip}
@@ -84,9 +84,7 @@ output "next_steps" {
     1. Wait a few minutes for first-boot Docker build (cloud-init + compose).
     2. Open the App URL (plain HTTP — not HTTPS) and log in with the admin password from setup.sh.
     3. After-hours test window: ./wake.sh 4|8|12|24
-
-    Optional later (other account DNS): A record → EIP, then on-box Caddy HTTPS.
-    Hostname offline failover: Path 1 Cloudflare or Path 2 Route 53 in README.
+    ${local.ui_edge_enabled ? "\nUI hostname: ${trimspace(var.app_hostname)}\nDNS ticket (other account):\n  1) Add ACM validation CNAMEs from: terraform output ui_acm_validation_records\n  2) After cert Issued: set enable_ui_cloudfront=true and terraform apply\n  3) Alias A/AAAA ${trimspace(var.app_hostname)} → UI CloudFront domain (terraform output ui_cloudfront_domain)\n  4) On box: PHX_HOST=${trimspace(var.app_hostname)} PHX_SCHEME=https CADDYFILE=Caddyfile.http" : "\nOptional later: set app_hostname + apply for Spectre ACM/Lambda@Edge; DNS account only adds validation + alias (see README Path 2)."}
     ${var.enable_maintenance_static ? "\nOffline page preview: https://${aws_cloudfront_distribution.maintenance[0].domain_name}/index.html" : ""}
     ${var.enable_business_hours_schedule ? "\nBusiness hours: auto-start ${var.schedule_start_hour}:00 / stop ${var.schedule_stop_hour}:00 ${var.schedule_timezone} Mon–Fri." : ""}
     ${var.enable_ops_alerts ? "\nOps email: ${var.ops_alert_email} (Confirm SNS subscription). Budget ${var.monthly_budget_usd} USD/mo; disk>=${var.disk_alarm_percent}% swap>=${var.swap_alarm_percent}% + OOM." : ""}
@@ -173,4 +171,45 @@ output "ops_dashboard_name" {
 output "ops_log_group_prefix" {
   description = "CloudWatch Logs prefix for Compose services (/{name_prefix}/…)."
   value       = "/${var.name_prefix}"
+}
+
+output "app_hostname" {
+  description = "Configured UI hostname (empty if IP-first only)."
+  value       = local.ui_edge_enabled ? trimspace(var.app_hostname) : null
+}
+
+output "ui_acm_certificate_arn" {
+  description = "ACM cert ARN for the UI hostname (null if app_hostname unset)."
+  value       = local.ui_edge_enabled ? aws_acm_certificate.ui[0].arn : null
+}
+
+output "ui_acm_validation_records" {
+  description = "DNS records the hosted-zone owner must create for ACM validation."
+  value = local.ui_edge_enabled ? [
+    for dvo in aws_acm_certificate.ui[0].domain_validation_options : {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  ] : []
+}
+
+output "ui_edge_lambda_qualified_arn" {
+  description = "Published Lambda@Edge version ARN (null if app_hostname unset)."
+  value       = local.ui_edge_enabled ? aws_lambda_function.ui_edge[0].qualified_arn : null
+}
+
+output "ui_cloudfront_domain" {
+  description = "UI CloudFront domain name for the Route 53 alias (null until enable_ui_cloudfront)."
+  value       = local.ui_cloudfront_enabled ? aws_cloudfront_distribution.ui[0].domain_name : null
+}
+
+output "ui_cloudfront_distribution_id" {
+  description = "UI CloudFront distribution ID (null until enable_ui_cloudfront)."
+  value       = local.ui_cloudfront_enabled ? aws_cloudfront_distribution.ui[0].id : null
+}
+
+output "ui_cloudfront_enabled" {
+  description = "Whether the UI CloudFront distribution is managed by this stack."
+  value       = local.ui_cloudfront_enabled
 }

@@ -268,6 +268,18 @@ variable "log_retention_days" {
   }
 }
 
+variable "app_hostname" {
+  description = "Public UI hostname (e.g. dronefeed.ecsdevlabs.com). Empty = IP-first only (no ACM / UI CloudFront / Lambda@Edge)."
+  type        = string
+  default     = ""
+}
+
+variable "enable_ui_cloudfront" {
+  description = "Create the UI CloudFront distribution (requires app_hostname and an Issued ACM cert — set true after DNS validation CNAMEs exist)."
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Extra tags applied to all resources."
   type        = map(string)

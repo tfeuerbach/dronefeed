@@ -1,20 +1,22 @@
 /**
- * Lambda@Edge viewer-request: serve maintenance_url when EC2 is unreachable.
- *
- * us-east-1, Node 18. Zip as index.js, publish a version, attach to the UI
- * CloudFront in front of the EIP. Set ORIGIN_BASE + MAINTENANCE_URL below from
- * terraform outputs. Full steps: deploy/terraform/README.md (Path 2).
+ * Reference copy — deployed from lambda-edge-viewer-request.js.tftpl via Terraform.
+ * When origin is up, return the CloudFront request (pass-through). When down, 503 HTML.
  */
 
 "use strict";
 
-// From: terraform output -raw public_ip / maintenance_url
 const ORIGIN_BASE = "http://203.0.113.10";
 const MAINTENANCE_URL = "https://dxxxx.cloudfront.net/index.html";
 const ORIGIN_TIMEOUT_MS = 2500;
 
 exports.handler = async (event) => {
   const request = event.Records[0].cf.request;
+  const method = (request.method || "GET").toUpperCase();
+
+  if (method !== "GET" && method !== "HEAD") {
+    return request;
+  }
+
   const path = request.uri || "/";
   const qs = request.querystring ? `?${request.querystring}` : "";
   const originUrl = `${ORIGIN_BASE}${path}${qs}`;
@@ -23,8 +25,8 @@ exports.handler = async (event) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
     const upstream = await fetch(originUrl, {
-      method: request.method,
-      headers: hopHeaders(request.headers),
+      method: "HEAD",
+      headers: { accept: "*/*" },
       signal: controller.signal,
       redirect: "manual",
     });
@@ -34,37 +36,11 @@ exports.handler = async (event) => {
       return maintenanceResponse(upstream.status);
     }
 
-    return toCfResponse(upstream);
+    return request;
   } catch {
     return maintenanceResponse(522);
   }
 };
-
-function hopHeaders(cfHeaders) {
-  const out = {};
-  for (const [name, values] of Object.entries(cfHeaders || {})) {
-    if (name === "host" || name === "connection" || name === "content-length") continue;
-    const v = values && values[0] && values[0].value;
-    if (v) out[name] = v;
-  }
-  return out;
-}
-
-async function toCfResponse(upstream) {
-  const body = await upstream.arrayBuffer();
-  const headers = {};
-  upstream.headers.forEach((value, key) => {
-    if (key.toLowerCase() === "transfer-encoding") return;
-    headers[key] = [{ key, value }];
-  });
-  return {
-    status: String(upstream.status),
-    statusDescription: upstream.statusText || "OK",
-    headers,
-    body: Buffer.from(body).toString("base64"),
-    bodyEncoding: "base64",
-  };
-}
 
 async function maintenanceResponse(originStatus) {
   try {

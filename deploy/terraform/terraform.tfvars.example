@@ -50,6 +50,10 @@ associate_elastic_ip = true
 # maintenance_bucket_same_account = true
 # maintenance_bucket_region       = ""
 
+# UI hostname — ACM + Lambda@Edge in this account; DNS account only validates + aliases.
+# app_hostname         = "dronefeed.ecsdevlabs.com"
+# enable_ui_cloudfront = false   # true after ACM validation CNAMEs exist and cert is Issued
+
 # Weekday auto start/stop (default on: 8→18 local). After-hours: ./wake.sh 4|8|12
 enable_business_hours_schedule = true
 schedule_timezone              = "America/New_York"

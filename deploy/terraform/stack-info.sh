@@ -82,6 +82,10 @@ maint_url="$(tf maintenance_url)"
 maint_domain="$(tf maintenance_cloudfront_domain)"
 maint_dist="$(tf maintenance_distribution_id)"
 maint_bucket="$(tf maintenance_bucket)"
+app_hostname="$(tf app_hostname)"
+ui_cf_domain="$(tf ui_cloudfront_domain)"
+ui_cf_id="$(tf ui_cloudfront_distribution_id)"
+ui_cf_enabled="$(tf ui_cloudfront_enabled)"
 ops_enabled="$(tf ops_alerts_enabled)"
 ops_email="$(tf ops_alert_email)"
 ops_topic="$(tf ops_alerts_topic_arn)"
@@ -111,7 +115,7 @@ generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 handoff_body() {
   cat <<EOF
-DroneFeed host — network handoff
+DroneFeed host — DNS handoff (validation + alias only)
 Generated: ${generated_at}
 
 Compute account:     ${account:-unknown}
@@ -122,18 +126,17 @@ Instance type:       ${instance_type} (${instance_state})
 Private IP:          ${private_ip:-unknown}
 VPC / subnet / SG:   ${vpc_id:-?} / ${subnet_id:-?} / ${sg_id:-?}
 
---- Live origin ---
+--- Live origin (Spectre) ---
 Public IPv4:         ${public_ip}
 HTTP origin URL:     ${app_url}
 HTTP port:           80
-TLS on origin today: no (http:// only until a hostname is configured on the box)
 
---- Media (same IPv4; keep off HTTP-only proxies) ---
+--- Media (EIP only; not CloudFront) ---
 Media IPv4:          ${public_ip}
 TCP:                 1935 (RTMP), 8554 (RTSP)
 UDP:                 8890 (SRT), 8900-8999 (MPEG-TS ingest)
 
---- Offline page (up when EC2 is stopped) ---
+--- Offline page (already in Spectre) ---
 EOF
   if [[ -n "$maint_url" ]]; then
     cat <<EOF
@@ -145,14 +148,34 @@ EOF
   else
     echo "Offline page:        (not provisioned)"
   fi
-  cat <<EOF
-
---- Record targets (hostname chosen by DNS owner) ---
-App hostname     →  ${public_ip}   (or edge in front of ${app_url})
-Media hostname   →  ${public_ip}   (DNS-only / non-proxied; UDP+TCP media ports)
-EOF
-  if [[ -n "$maint_url" ]]; then
-    echo "When origin down  →  ${maint_url}"
+  echo
+  if [[ -n "$app_hostname" ]]; then
+    echo "--- DNS ticket (hosted-zone account) ---"
+    echo "Hostname:            ${app_hostname}"
+    echo "1) ACM validation CNAMEs (create these first):"
+    acm_json="$(terraform output -json ui_acm_validation_records 2>/dev/null || echo '[]')"
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$acm_json" <<'PY' || true
+import json, sys
+rows = json.loads(sys.argv[1] or "[]")
+if not rows:
+    print("   (none yet — terraform apply with app_hostname first)")
+for r in rows:
+    print(f"   {r.get('type','CNAME')}  {r.get('name','')}  →  {r.get('value','')}")
+PY
+    else
+      echo "   (run: terraform output ui_acm_validation_records)"
+    fi
+    echo "2) After cert Issued in Spectre: set enable_ui_cloudfront=true and terraform apply."
+    if [[ -n "$ui_cf_domain" ]]; then
+      echo "3) Alias A/AAAA ${app_hostname} → ${ui_cf_domain} (CloudFront ${ui_cf_id})"
+    else
+      echo "3) Alias A/AAAA ${app_hostname} → UI CloudFront domain (terraform output ui_cloudfront_domain after step 2)"
+    fi
+    echo "Do not point DNS at the S3 offline bucket. Do not reuse the offline CloudFront as the UI distribution."
+  else
+    echo "--- DNS ---"
+    echo "No app_hostname set (IP-first). Media/publish use EIP ${public_ip}."
   fi
 }
 
@@ -231,6 +254,10 @@ OFFLINE_PAGE_URL=${maint_url}
 OFFLINE_CLOUDFRONT_DOMAIN=${maint_domain}
 OFFLINE_CLOUDFRONT_DISTRIBUTION_ID=${maint_dist}
 OFFLINE_S3_BUCKET=${maint_bucket}
+APP_HOSTNAME=${app_hostname}
+UI_CLOUDFRONT_DOMAIN=${ui_cf_domain}
+UI_CLOUDFRONT_DISTRIBUTION_ID=${ui_cf_id}
+UI_CLOUDFRONT_ENABLED=${ui_cf_enabled}
 OPS_DASHBOARD=${dash_name}
 OPS_LOG_PREFIX=${log_prefix}
 EOF
